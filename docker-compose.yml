@@ -1,11 +1,14 @@
-name: ghcr-soundcork-main
+name: soundcork
 services:
   soundcork:
     image: ghcr.io/deborahgu/soundcork:main
+    container_name: ghcr-soundcork-main
     ports:
       - "8000:8000"
     environment:
-      - base_url=http://192.168.2.180:8001
+      # Configure the base url where soundcork is hosted.
+      # Use port 8000 for direct access or port 8001 for access through nginx-ETag.
+      - base_url=http://soundcork:8001
       - data_dir=/soundcork/data
       - SOUNDCORK_MODE=local
       - SOUNDCORK_LOG_DIR=/soundcork/logs/traffic

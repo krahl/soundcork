@@ -1,8 +1,6 @@
-name: soundcork
 services:
   soundcork:
     image: ghcr.io/deborahgu/soundcork:main
-    container_name: ghcr-soundcork-main
     ports:
       - "8000:8000"
     environment:

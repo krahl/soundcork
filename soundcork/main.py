@@ -29,12 +29,14 @@ from soundcork.marge import (
     account_full_xml,
     add_device_to_account,
     add_recent,
+    delete_preset,
     presets_xml,
     provider_settings_xml,
     recents_xml,
     remove_device_from_account,
     software_update_xml,
     source_providers,
+    update_device_poweron,
     update_preset,
 )
 from soundcork.model import (
@@ -132,11 +134,9 @@ def read_root():
     tags=["marge"],
     status_code=HTTPStatus.OK,
 )
-def power_on(request: Request):
-    # Prime speakers for Spotify after boot.  The primer handles
-    # retry/backoff in a background thread so the response is fast.
-    source_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or None
-    zeroconf_primer.on_power_on(source_ip)
+async def power_on(request: Request):
+    xml = await request.body()
+    update_device_poweron(datastore, xml)
     return
 
 
@@ -220,15 +220,15 @@ def streamingsourceproviders():
 
 
 def etag_for_presets(request: Request) -> str:
-    return str(datastore.etag_for_presets(request.path_params.get("account")))
+    return str(datastore.etag_for_presets(str(request.path_params.get("account"))))
 
 
 def etag_for_recents(request: Request) -> str:
-    return str(datastore.etag_for_recents(request.path_params.get("account")))
+    return str(datastore.etag_for_recents(str(request.path_params.get("account"))))
 
 
 def etag_for_account(request: Request) -> str:
-    return str(datastore.etag_for_account(request.path_params.get("account")))
+    return str(datastore.etag_for_account(str(request.path_params.get("account"))))
 
 
 def etag_for_swupdate(request: Request) -> str:
@@ -279,6 +279,20 @@ async def put_account_preset(
     xml = await request.body()
     xml_resp = update_preset(datastore, account, device, preset_number, xml)
     return bose_xml_str(xml_resp)
+
+
+@app.delete(
+    "/marge/streaming/account/{account}/device/{device}/preset/{preset_number}",
+    response_class=BoseXMLResponse,
+    tags=["marge"],
+)
+def delete_account_preset(
+    account: Annotated[str, Path(pattern=ACCOUNT_RE)],
+    device: Annotated[str, Path(pattern=DEVICE_RE)],
+    preset_number: int,
+):
+    delete_preset(datastore, account, device, preset_number)
+    return None
 
 
 @app.get(
@@ -390,7 +404,7 @@ async def post_account_device(
     request: Request,
 ):
     xml = await request.body()
-    device_id, xml_resp = add_device_to_account(datastore, account, xml)
+    device_id, xml_resp = add_device_to_account(datastore, account, xml.decode())
 
     return bose_xml_str(xml_resp)
 
@@ -406,7 +420,7 @@ async def delete_account_device(
     response.headers["location"] = (
         f"{settings.base_url}/marge/account/{account}/device/{device}"
     )
-    response.body = ""
+    response.body = b""
     response.status_code = HTTPStatus.OK
     return response
 
@@ -479,6 +493,15 @@ def sw_update() -> Response:
         return response
 
 
+@app.post("/v1/scmudc/{deviceid}", tags=["stats"], status_code=HTTPStatus.OK)
+def stats_scmudc(deviceid: str):
+    """Returns 200 for the analytics endpoint.
+    
+    This isn't an endpoint we use, but it's noisy when it fails. Return 200.
+    """
+    return
+
+
 def bose_xml_str(xml: ET.Element) -> str:
     # ET.tostring won't allow you to set standalone="yes"
     return_xml = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>{ET.tostring(xml, encoding="unicode")}'
@@ -500,16 +523,17 @@ def test_scan_recents():
 
 @app.get("/scan", tags=["setup"])
 def scan_devices():
+    """Unlikely to be used in production, but has been useful during development."""
     devices = get_bose_devices()
     device_infos = {}
     for device in devices:
         info_elem = ET.fromstring(read_device_info(device))
         device_infos[device.udn] = {
             "device_id": info_elem.attrib.get("deviceID", ""),
-            "name": info_elem.find("name").text,
-            "type": info_elem.find("type").text,
-            "marge URL": info_elem.find("margeURL").text,
-            "account": info_elem.find("margeAccountUUID").text,
+            "name": info_elem.find("name").text,  # type: ignore
+            "type": info_elem.find("type").text,  # type: ignore
+            "marge URL": info_elem.find("margeURL").text,  # type: ignore
+            "account": info_elem.find("margeAccountUUID").text,  # type: ignore
         }
     return device_infos
 

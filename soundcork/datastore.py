@@ -1,16 +1,19 @@
 import logging
-import re
 import random
+import re
 import xml.etree.ElementTree as ET
-from os import mkdir, rmdir, listdir, path, walk, remove
-
-from typing import Optional
+from http import HTTPStatus
 from io import BytesIO
+from os import listdir, mkdir, path, remove, rmdir, walk
+from typing import Optional
+
+from fastapi import HTTPException
 
 from soundcork.config import Settings
 from soundcork.constants import (
     DEVICE_INFO_FILE,
     DEVICES_DIR,
+    POWERON_FILE,
     PRESETS_FILE,
     RECENTS_FILE,
     SOURCES_FILE,
@@ -44,14 +47,36 @@ class DataStore:
     def initialize_data_directory(self) -> None:
         raise NotImplementedError
 
-    def account_dir(self, account: str) -> str:
-        return path.join(self.data_dir, account)
+    def poweron_devices_dir(self) -> str:
+        """returns the top-level directory that stores poweron info for all devices"""
+        pdd = path.join(self.data_dir, DEVICES_DIR)
+        if not path.exists(pdd):
+            mkdir(pdd)
+        return pdd
+
+    def poweron_device_dir(self, device_id: str) -> str:
+        """returns the directory that stores the poweron file for the given device"""
+        return path.join(self.poweron_devices_dir(), device_id)
+
+    def account_dir(self, account: str, create: bool = False) -> str:
+        dir = path.join(self.data_dir, account)
+        if not path.exists(dir) and not create:
+            raise HTTPException(HTTPStatus.NOT_FOUND, f"Account {account} not found")
+        return dir
 
     def account_devices_dir(self, account: str) -> str:
         return path.join(self.data_dir, account, DEVICES_DIR)
 
-    def account_device_dir(self, account: str, device: str) -> str:
-        return path.join(self.account_devices_dir(account), device)
+    def account_device_dir(
+        self, account: str, device: str, create: bool = False
+    ) -> str:
+        dir = path.join(self.account_devices_dir(account), device)
+        if not path.exists(dir) and not create:
+            raise HTTPException(
+                HTTPStatus.NOT_FOUND,
+                f"Device {device} does not belong to account {account}",
+            )
+        return dir
 
     def get_device_info(self, account: str, device: str) -> DeviceInfo:
         """Get the device info"""
@@ -60,56 +85,39 @@ class DataStore:
             path.join(self.account_device_dir(account, device), DEVICE_INFO_FILE)
         )
         info_elem = stored_tree.getroot()
-        # info_elem = root.find("info")
-        device_id = info_elem.attrib.get("deviceID", "")
-        name = strip_element_text(info_elem.find("name"))
-        type = strip_element_text(info_elem.find("type"))
-        module_type = strip_element_text(info_elem.find("moduleType"))
+        return self.device_info_from_device_info_xml(info_elem)
 
-        try:
-            components = info_elem.find("components").findall("component")  # type: ignore
-        except Exception:
-            # TODO narrow exception class
-            components = []
+    def save_device_info(self, device: DeviceInfo, account: str) -> ET.Element:
+        """Saves definition of a Device associated with an Account"""
+        save_file = path.join(
+            self.account_device_dir(account, device.device_id), DEVICE_INFO_FILE
+        )
+        info_elem = ET.Element("info")
+        info_elem.attrib["deviceID"] = device.device_id
+        ET.SubElement(info_elem, "name").text = device.name
+        ET.SubElement(info_elem, "type").text = device.product_code
+        components_elem = ET.SubElement(info_elem, "components")
+        scm_elem = ET.SubElement(components_elem, "component")
+        ET.SubElement(scm_elem, "componentCategory").text = "SCM"
+        ET.SubElement(scm_elem, "softwareVersion").text = device.firmware_version
+        ET.SubElement(scm_elem, "serialNumber").text = device.device_serial_number
+        product_elem = ET.SubElement(components_elem, "component")
+        ET.SubElement(product_elem, "componentCategory").text = "PackagedProduct"
+        ET.SubElement(product_elem, "serialNumber").text = device.product_serial_number
+        network_elem = ET.SubElement(info_elem, "networkInfo")
+        network_elem.attrib["type"] = "SCM"
+        ET.SubElement(network_elem, "macAddress").text = device.device_id
+        ET.SubElement(network_elem, "ipAddress").text = device.ip_address
 
-        for component in components:
-            component_category = strip_element_text(component.find("componentCategory"))
-            if component_category == "SCM":
-                firmware_version = strip_element_text(component.find("softwareVersion"))
-                device_serial_number = strip_element_text(
-                    component.find("serialNumber")
-                )
-            elif component_category == "PackagedProduct":
-                product_serial_number = strip_element_text(
-                    component.find("serialNumber")
-                )
-
-        try:
-            for network_info in info_elem.findall("networkInfo"):
-                if network_info.attrib.get("type", "") == "SCM":
-                    ip_address = strip_element_text(network_info.find("ipAddress"))
-        except Exception:
-            # TODO narrow exception class
-            ip_address = ""
-
-        try:
-            return DeviceInfo(
-                device_id=device_id,
-                product_code=f"{type} {module_type}",
-                device_serial_number=str(device_serial_number),
-                product_serial_number=str(product_serial_number),
-                firmware_version=str(firmware_version),
-                ip_address=str(ip_address),
-                name=str(name),
-            )
-        except NameError:
-            raise RuntimeError(
-                f"There are missing required fields in the device: {device_id}"
-            )
+        info_tree = ET.ElementTree(info_elem)
+        ET.indent(info_tree, space="    ", level=0)
+        info_tree.write(save_file, xml_declaration=True, encoding="UTF-8")
+        return info_elem
 
     def save_presets(self, account: str, device: str, presets_list: list[Preset]):
         save_file = path.join(self.account_dir(account), PRESETS_FILE)
         presets_elem = ET.Element("presets")
+        presets_list.sort(key=lambda preset: int(preset.id))
         for preset in presets_list:
             preset_elem = ET.SubElement(presets_elem, "preset")
             preset_elem.attrib["id"] = preset.id
@@ -298,6 +306,128 @@ class DataStore:
         ) as sources_file:
             sources_file.write(sources_xml)
 
+    def find_device(self, device_id: str) -> tuple[DeviceInfo | None, str | None]:
+        """Looks for Device in datastore.
+
+        Given a device_id, looks for it
+        1. first, if associated with an account
+        2. if not, then as a device that's ever been powered on
+
+        Returns:
+            A tuple of the DeviceInfo object, if found, with the Account ID,
+            if it exists.
+        """
+        for account_id in self.list_accounts():
+            if account_id:
+                for id in self.list_devices(account_id):
+                    if id == device_id:
+                        return self.get_device_info(account_id, id), account_id
+        for id in self.list_poweron_devices():
+            if id == device_id:
+                return self.get_poweron_device_info(id), None
+
+        return None, None
+
+    def get_poweron_device_info(self, device: str) -> DeviceInfo:
+        poweron_elem = ET.parse(
+            path.join(self.poweron_device_dir(device), POWERON_FILE)
+        ).getroot()
+        return self.device_info_from_poweron_xml(poweron_elem)
+
+    def save_poweron(self, device_id: str, poweron_xml: str):
+        device_dir = self.poweron_device_dir(device_id)
+        if not path.exists(device_dir):
+            mkdir(device_dir)
+
+        with open(
+            path.join(device_dir, POWERON_FILE),
+            "w",
+        ) as poweron_file:
+            poweron_file.write(poweron_xml)
+
+    def device_info_from_poweron_xml(self, poweron_elem: ET.Element) -> DeviceInfo:
+        device_elem = poweron_elem.find("device")
+        if device_elem != None:
+            device_id = device_elem.attrib.get("id", "")
+            device_serial_number = strip_element_text(device_elem.find("serialnumber"))
+            firmware_version = strip_element_text(device_elem.find("firmware-version"))
+            product_elem = device_elem.find("product")
+            if product_elem != None:
+                product_code = product_elem.attrib.get("product_code", "")
+                product_type = product_elem.attrib.get("type", "")
+                product_serial_number = strip_element_text(
+                    product_elem.find("serialnumber")
+                )
+        diagnostic_elem = poweron_elem.find("diagnostic-data")
+        if diagnostic_elem != None:
+            landscape_elem = diagnostic_elem.find("device-landscape")
+            if landscape_elem != None:
+                ip_address = strip_element_text(landscape_elem.find("ip-address"))
+
+        return DeviceInfo(
+            device_id=device_id,
+            product_code=product_code,
+            device_serial_number=device_serial_number,
+            product_serial_number=str(product_serial_number),
+            firmware_version=str(firmware_version),
+            ip_address=str(ip_address),
+            name="",
+        )
+
+    def device_info_from_device_info_xml(self, info_elem: ET.Element) -> DeviceInfo:
+        """
+        converts a DeviceInfo.xml formatted element into a DeviceInfo object.
+        usually sourced either from {account}/devices/{deviceid}/DeviceInfo.xml
+        or from http://{deviceip}:8090/info
+        """
+        device_id = info_elem.attrib.get("deviceID", "")
+        name = strip_element_text(info_elem.find("name"))
+        type = strip_element_text(info_elem.find("type"))
+        module_type = strip_element_text(info_elem.find("moduleType"))
+
+        try:
+            components = info_elem.find("components").findall("component")  # type: ignore
+        except Exception:
+            # TODO narrow exception class
+            components = []
+
+        for component in components:
+            component_category = strip_element_text(component.find("componentCategory"))
+            if component_category == "SCM":
+                firmware_version = strip_element_text(component.find("softwareVersion"))
+                device_serial_number = strip_element_text(
+                    component.find("serialNumber")
+                )
+            elif component_category == "PackagedProduct":
+                product_serial_number = strip_element_text(
+                    component.find("serialNumber")
+                )
+
+        try:
+            for network_info in info_elem.findall("networkInfo"):
+                if network_info.attrib.get("type", "") == "SCM":
+                    ip_address = strip_element_text(network_info.find("ipAddress"))
+        except Exception:
+            # TODO narrow exception class
+            ip_address = ""
+
+        try:
+            return DeviceInfo(
+                device_id=device_id,
+                product_code=f"{type} {module_type}",
+                device_serial_number=str(device_serial_number),
+                product_serial_number=str(product_serial_number),
+                firmware_version=str(firmware_version),
+                ip_address=str(ip_address),
+                name=str(name),
+            )
+        except NameError:
+            raise RuntimeError(
+                f"There are missing required fields in the device: {device_id}"
+            )
+
+    #### ETags
+
     def etag_for_presets(self, account: str) -> int:
         presets_file = path.join(self.account_dir(account), PRESETS_FILE)
         if path.exists(presets_file):
@@ -331,13 +461,27 @@ class DataStore:
     def list_accounts(self) -> list[Optional[str]]:
         accounts: list[str | None] = []
         for account_id in next(walk(self.data_dir))[1]:
-            accounts.append(account_id)
+            # Check if the ID is digits to distinguish between accounts and power_on devices.
+            if account_id.isdigit():
+                accounts.append(account_id)
 
         return accounts
 
     def list_devices(self, account_id) -> list[Optional[str]]:
         devices: list[str | None] = []
         for device_id in next(walk(self.account_devices_dir(account_id)))[1]:
+            devices.append(device_id)
+
+        return devices
+
+    def list_poweron_devices(self) -> list[str]:
+        """List all devices Soundcork has seen power on
+
+        Returns:
+        - List[device_ids: str]: IDs for every device Soundcork has seen
+        """
+        devices: list[str] = []
+        for device_id in next(walk(self.poweron_devices_dir()))[1]:
             devices.append(device_id)
 
         return devices
@@ -354,24 +498,20 @@ class DataStore:
             return False
 
         # TODO: add error handling if you can't make the directory
-        mkdir(self.account_dir(account))
+        mkdir(self.account_dir(account, True))
         mkdir(self.account_devices_dir(account))
         # create devices subdirectory
         return True
 
-    def add_device(self, account: str, device_id: str, device_info_xml: str) -> bool:
+    def add_device(self, account: str, device_id: str, device: DeviceInfo) -> bool:
         if self.device_exists(account, device_id):
             return False
 
         # TODO: add error handling if you can't make the directory
         mkdir(path.join(self.account_devices_dir(account), device_id))
 
-        # TODO: add error handling if you can't write the file
-        with open(
-            path.join(self.account_device_dir(account, device_id), DEVICE_INFO_FILE),
-            "w",
-        ) as device_info_file:
-            device_info_file.write(device_info_xml)
+        self.save_device_info(device, account)
+
         return True
 
     def remove_device(self, account: str, device_id: str) -> bool:
@@ -383,41 +523,42 @@ class DataStore:
         remove(path.join(self.account_device_dir(account, device_id), DEVICE_INFO_FILE))
         rmdir(path.join(self.account_devices_dir(account), device_id))
         return True
-           
-######## groups #################
-    #-- Helper function to prettyprint XML
+
+    ######## groups #################
+    # -- Helper function to prettyprint XML
     def _pretty_xml(self, root: ET.Element) -> str:
-        #-- add indentations
+        # -- add indentations
         ET.indent(root, space="  ", level=0)
         buf = BytesIO()
         ET.ElementTree(root).write(buf, encoding="utf-8", xml_declaration=True)
         return buf.getvalue().decode("utf-8")
-        
-    #-- Helper function to create a unique group_id
+
+    # -- Helper function to create a unique group_id
     def _generate_group_id(self, account: str) -> str:
         while True:
             group_id = f"{random.randint(0, 9999999):07d}"
             filepath = path.join(
-                self.account_devices_dir(account),
-                f"Group_{group_id}.xml"
+                self.account_devices_dir(account), f"Group_{group_id}.xml"
             )
             if not path.exists(filepath):
                 return group_id
 
-    #-- list all existing groups
+    # -- list all existing groups
     def list_groups(self, account: str) -> list[str]:
         devices_dir = self.account_devices_dir(account)
         groups = []
         for fn in listdir(devices_dir):
             if fn.startswith("Group_") and fn.endswith(".xml"):
-                groups.append(fn[len("Group_"):-len(".xml")])
+                groups.append(fn[len("Group_") : -len(".xml")])
         return groups
 
-    #-- check if a group with given id exist
+    # -- check if a group with given id exist
     def group_exists(self, account: str, group_id: str) -> bool:
-        return path.exists(path.join(self.account_devices_dir(account), f"Group_{group_id}.xml"))
-    
-    #-- check if a given device is already grouped    
+        return path.exists(
+            path.join(self.account_devices_dir(account), f"Group_{group_id}.xml")
+        )
+
+    # -- check if a given device is already grouped
     def check_device_grouped(self, account: str, device_id: str) -> Optional[str]:
         devices_dir = self.account_devices_dir(account)
         for filename in listdir(devices_dir):
@@ -436,7 +577,7 @@ class DataStore:
                     return filename[len("Group_") : -len(".xml")]
         return None
 
-    #-- check if a device with given id is of type ST10    
+    # -- check if a device with given id is of type ST10
     def check_device_type(self, account: str, device_id: str) -> bool:
         info_path = path.join(
             self.account_devices_dir(account),
@@ -454,25 +595,27 @@ class DataStore:
         dev_type = root.find("type")
         return dev_type is not None and dev_type.text == "SoundTouch 10"
 
-    #-- validate group xml        
+    # -- validate group xml
     def validate_group_xml(self, xml_content: str) -> ET.Element:
         try:
             root = ET.fromstring(xml_content)
         except ET.ParseError as e:
             raise ValueError(f"Invalid XML: {e}")
 
-        #-- <name>
+        # -- <name>
         name = root.find("name")
         if name is None or not name.text or not name.text.strip():
             raise ValueError("Missing or empty <name> element")
 
-        #-- <masterDeviceId>
+        # -- <masterDeviceId>
         master = root.find("masterDeviceId")
         if master is None or not master.text:
             raise ValueError("Missing <masterDeviceId> element")
 
         # <roles>/<groupRole>/<deviceId>
-        device_ids = [d.text for d in root.findall("./roles/groupRole/deviceId") if d.text]
+        device_ids = [
+            d.text for d in root.findall("./roles/groupRole/deviceId") if d.text
+        ]
         if not device_ids:
             raise ValueError("No <groupRole>/<deviceId> entries found")
 
@@ -481,12 +624,11 @@ class DataStore:
 
         return root
 
-
-    #-- add a group, if a.) both devices are ungrouped and 
-    #                   b.) of type ST10 and       
+    # -- add a group, if a.) both devices are ungrouped and
+    #                   b.) of type ST10 and
     def add_group(self, account: str, group_info_xml: str) -> str:
         """
-        adds a group if it a.) both devices exist, b.) both are ST10 
+        adds a group if it a.) both devices exist, b.) both are ST10
         return value:
         - XML string of created group on success
         - error message on failure
@@ -502,39 +644,41 @@ class DataStore:
         except ValueError as e:
             return str(e)
 
-        #-- extract two deviceIds
-        device_ids = [d.text for d in root.findall("./roles/groupRole/deviceId") if d.text]
+        # -- extract two deviceIds
+        device_ids = [
+            d.text for d in root.findall("./roles/groupRole/deviceId") if d.text
+        ]
         if len(device_ids) != 2:
             return "Group must contain exactly two deviceId entries"
 
-        #-- are these already grouped?
+        # -- are these already grouped?
         for dev_id in device_ids:
             grouped_in = self.check_device_grouped(account, dev_id)
             if grouped_in:
                 return f"Device {dev_id} is already part of group {grouped_in}"
 
-        #-- are these ST10 devices?
+        # -- are these ST10 devices?
         for dev_id in device_ids:
             if not self.check_device_type(account, dev_id):
                 return f"Device {dev_id} is not of type 'SoundTouch 10'"
-        
-        #-- done with tests
+
+        # -- done with tests
         root.set("id", group_id)
         xml_out = self._pretty_xml(root)
-        #-- write to file
+        # -- write to file
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(xml_out)
-        #-- return complete prettyprinted XML
+        # -- return complete prettyprinted XML
         return xml_out
 
-    #-- change the name of a group
+    # -- change the name of a group
     def modify_group(
         self,
         account: str,
         group_id: str,
         new_name: str,
         master_device_id: str,
-        ) -> str:
+    ) -> str:
         """
         modifies name of a group
         return value:
@@ -542,21 +686,20 @@ class DataStore:
         - error message on failure
         """
         group_file = path.join(
-            self.account_devices_dir(account),
-            f"Group_{group_id}.xml"
+            self.account_devices_dir(account), f"Group_{group_id}.xml"
         )
 
         if not path.exists(group_file):
             return f"Group does not exist in account {account}"
 
-        #-- get xml file
+        # -- get xml file
         try:
             tree = ET.parse(group_file)
             root = tree.getroot()
         except ET.ParseError:
             return "Stored group XML is invalid"
 
-        #-- check master device
+        # -- check master device
         stored_master = root.findtext("masterDeviceId")
         if not stored_master:
             return "Group has no masterDeviceId"
@@ -564,27 +707,27 @@ class DataStore:
         if stored_master != master_device_id:
             return "masterDeviceId does not match group master"
 
-        #-- <name> replacement
+        # -- <name> replacement
         name_elem = root.find("name")
         if name_elem is None:
             name_elem = ET.SubElement(root, "name")
         name_elem.text = new_name
 
-        #-- stringify with prettyprint
+        # -- stringify with prettyprint
         xml_out = self._pretty_xml(root)
-        #xml_out = ET.tostring(
+        # xml_out = ET.tostring(
         #    root,
         #    encoding="utf-8",
         #    xml_declaration=True,
-        #).decode("utf-8")
+        # ).decode("utf-8")
 
-        #-- write to file 
+        # -- write to file
         with open(group_file, "w", encoding="utf-8") as f:
             f.write(xml_out)
 
         return xml_out
 
-    #-- delete a group if it exists
+    # -- delete a group if it exists
     def delete_group(self, account: str, group_id: str) -> str:
         """
         deletes a group if it exists.
@@ -605,32 +748,34 @@ class DataStore:
 
         return ""
 
-    #-- check group status of a device
+    # -- check group status of a device
     def get_device_group_xml(self, account: str, device_id: str) -> str:
         """
-        check group status of a device      
+        check group status of a device
         return value::
         - XML <group/> if ungrouped
         - XML file of group if grouped
         - error if device does not exist or is no ST10
         """
-        #-- device existent (may be obsolete, is already checked in main.py)
+        # -- device existent (may be obsolete, is already checked in main.py)
         device_dir = path.join(self.account_devices_dir(account), device_id)
         info_path = path.join(device_dir, DEVICE_INFO_FILE)
         if not path.exists(info_path):
             return f"Device {device_id} does not exist"
 
-        #-- type=ST10 ? 
+        # -- type=ST10 ?
         if not self.check_device_type(account, device_id):
             return f"Device {device_id} is not of type 'SoundTouch 10'"
 
-        #-- check status
+        # -- check status
         grouped_in = self.check_device_grouped(account, device_id)
         if not grouped_in:
             return "<group/>"
 
-        #-- get xml file of group
-        group_file = path.join(self.account_devices_dir(account), f"Group_{grouped_in}.xml")
+        # -- get xml file of group
+        group_file = path.join(
+            self.account_devices_dir(account), f"Group_{grouped_in}.xml"
+        )
         try:
             with open(group_file, "r", encoding="utf-8") as f:
                 xml_content = f.read()

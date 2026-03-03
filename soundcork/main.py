@@ -30,12 +30,14 @@ from soundcork.marge import (
     account_full_xml,
     add_device_to_account,
     add_recent,
+    delete_preset,
     presets_xml,
     provider_settings_xml,
     recents_xml,
     remove_device_from_account,
     software_update_xml,
     source_providers,
+    update_device_poweron,
     update_preset,
 )
 from soundcork.model import (
@@ -110,11 +112,9 @@ def read_root():
     tags=["marge"],
     status_code=HTTPStatus.OK,
 )
-def power_on():
-    # see https://github.com/fastapi/fastapi/discussions/8091 for the TODO here
-    # I wonder if the endpoint will work if I return HTTPStatus.IM_A_TEAPOT
-    # instead? I'd like to try it.
-
+async def power_on(request: Request):
+    xml = await request.body()
+    update_device_poweron(datastore, xml)
     return
 
 
@@ -210,6 +210,20 @@ async def put_account_preset(
     xml = await request.body()
     xml_resp = update_preset(datastore, account, device, preset_number, xml)
     return bose_xml_str(xml_resp)
+
+
+@app.delete(
+    "/marge/streaming/account/{account}/device/{device}/preset/{preset_number}",
+    response_class=BoseXMLResponse,
+    tags=["marge"],
+)
+def delete_account_preset(
+    account: Annotated[str, Path(pattern=ACCOUNT_RE)],
+    device: Annotated[str, Path(pattern=DEVICE_RE)],
+    preset_number: int,
+):
+    delete_preset(datastore, account, device, preset_number)
+    return None
 
 
 @app.get(
@@ -321,7 +335,7 @@ async def post_account_device(
     request: Request,
 ):
     xml = await request.body()
-    device_id, xml_resp = add_device_to_account(datastore, account, str(xml))
+    device_id, xml_resp = add_device_to_account(datastore, account, xml.decode())
 
     return bose_xml_str(xml_resp)
 
@@ -408,6 +422,15 @@ def sw_update() -> Response:
         sw_update_response = file.read()
         response = Response(content=sw_update_response, media_type="application/xml")
         return response
+
+
+@app.post("/v1/scmudc/{deviceid}", tags=["stats"], status_code=HTTPStatus.OK)
+def stats_scmudc(deviceid: str):
+    """Returns 200 for the analytics endpoint.
+    
+    This isn't an endpoint we use, but it's noisy when it fails. Return 200.
+    """
+    return
 
 
 def bose_xml_str(xml: ET.Element) -> str:

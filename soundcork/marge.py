@@ -1,6 +1,7 @@
 import logging
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
@@ -126,12 +127,47 @@ def update_preset(
         container_art=container_art,
     )
 
-    presets_list[preset_number - 1] = preset_obj
+    preset_number_str = str(preset_number)
+    matching_preset = None
+    for preset in presets_list:
+        if preset.id == preset_number_str:
+            matching_preset = preset
+            break
+
+    if matching_preset:
+        presets_list.remove(matching_preset)
+
+    presets_list.append(preset_obj)
 
     datastore.save_presets(account, device, presets_list)
 
     preset_element = preset_xml(preset_obj, conf_sources_list)
     return preset_element
+
+
+def delete_preset(
+    datastore: "DataStore",
+    account: str,
+    device: str,
+    preset_number: int,
+) -> bool:
+    presets_list = datastore.get_presets(account, device)
+
+    preset_number_str = str(preset_number)
+    matching_preset = None
+    for preset in presets_list:
+        if preset.id == preset_number_str:
+            matching_preset = preset
+            break
+
+    if not matching_preset:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Preset not found")
+
+    presets_list.remove(matching_preset)
+
+    datastore.save_presets(account, device, presets_list)
+
+    return True
 
 
 def content_item_source_xml(
@@ -401,13 +437,27 @@ def add_device_to_account(
     new_device_elem = ET.fromstring(source_xml)
     device_id = new_device_elem.attrib.get("deviceid", "")
     # Name is required and should raise an exception if missing
-    name = new_device_elem.find("name").text  # type:ignore
-    device = get_device_by_id(device_id)
-    if not device:
-        raise RuntimeError(f"Unknown device {device_id}")
-    device_xml = read_device_info(device)
-    datastore.add_device(account, device_id, device_xml)
+    name = strip_element_text(new_device_elem.find("name"))
+    if not name:
+        raise RuntimeError("device requires a name")
 
+    # first see if this device is already defined
+    existing_device, current_account = datastore.find_device(device_id)
+    if existing_device:
+        if current_account:
+            datastore.remove_device(current_account, device_id)
+        existing_device.name = name
+        datastore.add_device(account, device_id, existing_device)
+    else:
+        device = get_device_by_id(device_id)
+        if not device:
+            raise RuntimeError(f"Unknown device {device_id}")
+
+        device_xml = read_device_info(device)
+        device_elem = ET.fromstring(device_xml)
+        datastore.add_device(
+            account, device_id, datastore.device_info_from_device_info_xml(device_elem)
+        )
     created_on = datetime.fromtimestamp(
         datetime.now().timestamp(), timezone.utc
     ).isoformat()
@@ -425,3 +475,15 @@ def add_device_to_account(
 def remove_device_from_account(datastore: "DataStore", account: str, device: str):
     removed = datastore.remove_device(account, device)
     return {"ok": removed}
+
+
+def update_device_poweron(datastore: "DataStore", poweron_xml: bytes):
+    poweron_elem = ET.fromstring(poweron_xml)
+    device = datastore.device_info_from_poweron_xml(poweron_elem)
+    logger.info(f"device={device}")
+    current_device, account_id = datastore.find_device(device.device_id)
+    if current_device and account_id:
+        if current_device.ip_address != device.ip_address:
+            current_device.ip_address = device.ip_address
+            datastore.save_device_info(current_device, account_id)
+    datastore.save_poweron(device.device_id, poweron_xml.decode())

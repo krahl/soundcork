@@ -19,7 +19,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from soundcork.config import Settings
 from soundcork.datastore import DataStore
-from soundcork.mgmt_auth import verify_credentials
 from soundcork.spotify_service import SpotifyService
 
 logger = logging.getLogger(__name__)
@@ -37,7 +36,6 @@ spotify = SpotifyService()
 @router.get("/accounts/{account_id}/speakers")
 def list_speakers(
     account_id: str,
-    _user: str = Depends(verify_credentials),
 ):
     """List all speakers for an account.
 
@@ -73,7 +71,6 @@ def list_speakers(
 @router.get("/devices/{device_id}/events")
 def list_device_events(
     device_id: str,
-    _user: str = Depends(verify_credentials),
 ):
     """List events for a device.
 
@@ -89,7 +86,6 @@ def list_device_events(
 @router.post("/spotify/init")
 def spotify_init(
     request: Request,
-    _user: str = Depends(verify_credentials),
 ):
     """Start the Spotify OAuth flow.
 
@@ -177,7 +173,6 @@ async def spotify_callback(
 @router.post("/spotify/confirm")
 async def spotify_confirm(
     code: Annotated[str, Query()],
-    _user: str = Depends(verify_credentials),
 ):
     """Confirm Spotify authorization with an authorization code.
 
@@ -200,9 +195,7 @@ async def spotify_confirm(
 
 
 @router.get("/spotify/accounts")
-def spotify_accounts(
-    _user: str = Depends(verify_credentials),
-):
+def spotify_accounts():
     """List connected Spotify accounts (tokens stripped)."""
     accounts = spotify.list_accounts()
     return {
@@ -220,7 +213,6 @@ def spotify_accounts(
 @router.post("/spotify/entity")
 async def spotify_entity(
     request: Request,
-    _user: str = Depends(verify_credentials),
 ):
     """Resolve a Spotify URI to a name and image URL.
 

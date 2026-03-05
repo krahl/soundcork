@@ -218,7 +218,9 @@ def configured_source_xml(conf_source: ConfiguredSource) -> ET.Element:
     source = ET.Element("source")
     source.attrib["id"] = conf_source.id
     source.attrib["type"] = "Audio"
-    ET.SubElement(source, "createdOn").text = default_datestr
+    ET.SubElement(source, "createdOn").text = (
+        conf_source.created_on if conf_source.created_on else default_datestr
+    )
     credential = ET.SubElement(source, "credential")
     credential.text = conf_source.secret
     credential.attrib["type"] = "token"
@@ -227,8 +229,10 @@ def configured_source_xml(conf_source: ConfiguredSource) -> ET.Element:
         PROVIDERS.index(conf_source.source_key_type) + 1
     )
     ET.SubElement(source, "sourcename").text = conf_source.display_name
-    ET.SubElement(source, "sourcesettings")
-    ET.SubElement(source, "updatedOn").text = default_datestr
+    ET.SubElement(source, "sourceSettings")
+    ET.SubElement(source, "updatedOn").text = (
+        conf_source.updated_on if conf_source.updated_on else default_datestr
+    )
     ET.SubElement(source, "username").text = conf_source.source_key_account
 
     return source

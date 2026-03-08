@@ -357,6 +357,15 @@ async def delete_account_device(
     return response
 
 
+@app.get("/marge/streaming/device/{device_id}/streaming_token", tags=["marge"])
+def streaming_token(device_id: str, response: Response):
+    response.headers["Authorization"] = "c3dvcmRmaXNoCg=="
+    etag = int(datetime.now().timestamp() * 1000)
+    response.headers["ETag"] = str(etag)
+
+    return
+
+
 @app.get("/bmx/registry/v1/services", response_model_exclude_none=True, tags=["bmx"])
 def bmx_services() -> BmxResponse:
 

@@ -42,10 +42,6 @@ class DataStore:
     def __init__(self) -> None:
         logger.info("Initiating Datastore")
         self.data_dir = settings.data_dir
-        # def __init__(self, data_dir: str, settings: Settings) -> None:
-
-    def initialize_data_directory(self) -> None:
-        raise NotImplementedError
 
     def poweron_devices_dir(self) -> str:
         """returns the top-level directory that stores poweron info for all devices"""
@@ -72,12 +68,10 @@ class DataStore:
         """
         return path.join(self.data_dir, account, DEVICES_DIR)
 
-    def account_device_dir(
-        self, account: str, device: str, create: bool = False
-    ) -> str:
+    def account_device_dir(self, account: str, device: str) -> str:
         """Returns the directory holding an account's files for a given device."""
         dir = path.join(self.account_devices_dir(account), device)
-        if not path.exists(dir) and not create:
+        if not path.exists(dir):
             raise HTTPException(
                 HTTPStatus.NOT_FOUND,
                 f"Device {device} does not belong to account {account}",
@@ -294,6 +288,9 @@ class DataStore:
                 last_id += 1
             secret = source_elem.attrib.get("secret", "")
             secret_type = source_elem.attrib.get("secretType", "")
+            created_on = strip_element_text(source_elem.find("createdOn"))
+            updated_on = strip_element_text(source_elem.find("updatedOn"))
+
             # if sourceKey is not present, the .find will correctly raise an error here
             source_key_elem = source_elem.find("sourceKey")
             source_key_account = source_key_elem.attrib.get("account", "")  # type: ignore
@@ -306,6 +303,8 @@ class DataStore:
                     secret_type=secret_type,
                     source_key_type=source_key_type,
                     source_key_account=source_key_account,
+                    created_on=created_on,
+                    updated_on=updated_on,
                 )
             )
 

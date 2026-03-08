@@ -1,3 +1,11 @@
+"""
+Handles group calls to the marge server.
+
+Groups, in SoundTouch terminology, are ST10 devices (which are mono) paired
+togeter to act as a single stereo device. If you don't have two ST10s then
+you will likely never use Groups.
+"""
+
 import xml.etree.ElementTree as ET
 from http import HTTPStatus
 from typing import Annotated

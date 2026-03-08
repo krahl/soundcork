@@ -1,3 +1,14 @@
+"""
+In most cases, ST10 pairing into Groups works just through direct calls to the
+speaker's :8090/addGroup, :8090/updategroup, and :8090/removeGroup endpoints, which then
+result in corresponding calls to the marge server and notification of the
+paired speaker via WebSocket. In cases where this is insufficient, these endpoints
+are provided to manage Groups.
+
+Most users should not need to use these, but in the cases when they are necessary
+they should prove useful.
+"""
+
 import asyncio
 import xml.etree.ElementTree as ET
 from http import HTTPStatus

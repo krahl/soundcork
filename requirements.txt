@@ -1,4 +1,4 @@
-black==26.1.0  # dev only
+black==26.3.1  # dev only
 fastapi[standard]==0.129.0
 fastapi-etag==0.4.0
 gunicorn==23.0.0
@@ -11,4 +11,5 @@ pytest-cov==7.0.0  # dev only
 scp==0.15.0
 telnetlib3==4.0.0
 types-paramiko==4.0.0.20250822
+telnetlib3==4.0.1
 upnpclient==1.0.3

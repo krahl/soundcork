@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_admin_router(datastore: DataStore, settings):
-    from bosesoundtouchapi.soundtouchclient import SoundTouchDevice  # type:ignore
+    from bosesoundtouchapi.soundtouchclient import SoundTouchDevice  # type: ignore
     from bosesoundtouchapi.soundtouchdiscovery import SoundTouchDiscovery  # type:ignore
     from fastapi.responses import HTMLResponse
     from fastapi.templating import Jinja2Templates

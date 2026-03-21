@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -7,6 +8,7 @@ from http import HTTPStatus
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_etag import Etag
@@ -52,6 +54,7 @@ from soundcork.model import (
     BmxResponse,
     BoseXMLResponse,
 )
+from soundcork.utils import strip_element_text
 
 logging.basicConfig(
     level=logging.INFO,
@@ -98,6 +101,18 @@ app = FastAPI(
     version="0.0.1",
     openapi_tags=tags_metadata,
     lifespan=lifespan,
+)
+
+origins = [
+    "*",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -409,6 +424,50 @@ def streaming_token(device_id: str, response: Response):
     response.headers["ETag"] = str(etag)
 
     return
+
+
+@app.post("/marge/streaming/account/login", tags=["marge"])
+async def post_account_login(
+    request: Request,
+):
+    xml = await request.body()
+    # for now if they send in an account id as the username
+    # then log in that account
+    try:
+        login_xml = ET.fromstring(xml)
+        if login_xml:
+            username = strip_element_text(login_xml.find("username"))
+            account_pattern = re.compile(ACCOUNT_RE)
+            if account_pattern.match(username):
+                account_id = username
+            else:
+                raise Exception
+    except Exception:
+        exception_xml = """<status>
+        <message>Account Login failure.</message>
+        <status-code>4024</status-code>
+        </status>"""
+        response = Response(content=exception_xml, media_type="application/xml")
+        response.status_code = HTTPStatus.BAD_REQUEST
+        return response
+
+    account_elem = ET.Element("account")
+    account_elem.attrib["id"] = account_id
+    ET.SubElement(account_elem, "accountStatus").text = "OK"
+    ET.SubElement(account_elem, "mode").text = "global"
+    ET.SubElement(account_elem, "preferredLanguage").text = "en"
+
+    return_xml = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>{ET.tostring(account_elem, encoding="unicode")}'
+    response = Response(content=return_xml, media_type="application/xml")
+    # TODO: move content type to constants
+    response.headers["content-type"] = "application/vnd.bose.streaming-v1.2+xml"
+
+    etag = startup_timestamp
+
+    response.headers["etag"] = str(etag)
+    # just making this up
+    response.headers["Credentials"] = "3432143243243432143fdafd"
+    return response
 
 
 @app.post(

@@ -1,5 +1,11 @@
 """
 Endpoints for an admin UI.
+
+This is a DRAFT version of the admin ui. The display code is not functioning correctly yet, because the device discovery code isn't working correctly. Before it's considered working even for display-only, it will need to have:
+
+- timeouts for device interaction
+- error handling, with errors reported on the web page
+- guaranteed loading of the page with a status message of some sort after only a few seconds.
 """
 
 import logging

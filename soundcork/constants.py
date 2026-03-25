@@ -67,6 +67,7 @@ SPEAKER_RECENTS_PATH = "/recents"
 SPEAKER_PRESETS_PATH = "/presets"
 # this one needs to be pulled from a device
 SPEAKER_SOURCES_FILE_LOCATION = "/mnt/nv/BoseApp-Persistence/1/Sources.xml"
+SPEAKER_OVERRIDE_SDK_LOCATION = "/mnt/nv/OverrideSdkPrivateCfg.xml"
 
 # validation
 ACCOUNT_RE = "^\\d{1,20}$"

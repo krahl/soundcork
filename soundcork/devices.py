@@ -6,9 +6,11 @@ software on a BusyBox system.
 """
 
 import logging
+import socket
 import tempfile
 import urllib.request
 import xml.etree.ElementTree as ET
+from io import BytesIO
 from os import unlink
 from subprocess import run
 from typing import Optional
@@ -17,12 +19,12 @@ from urllib.parse import urlparse
 import paramiko
 import upnpclient  # type: ignore
 from scp import SCPClient  # type: ignore
-from telnetlib3 import Telnet  # type: ignore
 
 from soundcork.config import Settings
 from soundcork.constants import (
     SPEAKER_DEVICE_INFO_PATH,
     SPEAKER_HTTP_PORT,
+    SPEAKER_OVERRIDE_SDK_LOCATION,
     SPEAKER_PRESETS_PATH,
     SPEAKER_RECENTS_PATH,
     SPEAKER_SOURCES_FILE_LOCATION,
@@ -38,18 +40,6 @@ logger = logging.getLogger(__name__)
 
 datastore = DataStore()
 settings = Settings()
-
-
-SSH_ARGS = [
-    "scp",
-    "-O",
-    "-o",
-    "StrictHostKeyChecking=accept-new",
-    "-o",
-    "HostkeyAlgorithms=+ssh-rsa,ssh-dss",
-    "-o",
-    "PreferredAuthentications=password",
-]
 
 
 def hostname_for_device(device: upnpclient.upnp.Device) -> str:
@@ -93,23 +83,46 @@ def read_sources(device: upnpclient.upnp.Device) -> str:
     return sources.decode()
 
 
-def write_file_to_speaker(filename: str, host: str, remote_path: str) -> None:
-    """Place a file on the remote speaker.
+def override_speaker_config(host: str) -> bool:
+    bytesio = BytesIO()
+    with open("resources/OverrideSdkPrivateCfg.xml.template", "r") as file:
+        override_xml = file.read()
+        override_xml = override_xml.replace("{SC_BASE_URL}", f"{settings.base_url}")
+        bytesio.write(override_xml.encode())
+        bytesio.seek(0)
+    return write_file_to_speaker(bytesio, host, SPEAKER_OVERRIDE_SDK_LOCATION)
 
-    Unfortunately, the speakers' shell (BusyBox) supports scp but not sftp, while
-    all the Paramiko-based ssh libraries for Python (such as Fabric) only emulate scp over
-    sftp. As a result, we need to subprocess call out to scp, which hopefully is present
-    on the host system and hopefully uses a version with these arguments.
-    """
+
+def write_file_to_speaker(payload: BytesIO, host: str, remote_path: str) -> bool:
+
     # TODO add timeout handling
-    logger.debug(f"copying {filename} to {host}")
-    result = run(
-        SSH_ARGS + [filename, f"root@{host}:{remote_path}"], capture_output=True
-    )
-    if result.returncode:
-        raise RuntimeError(
-            f"something went wrong copying {filename} to {host}: {str(result.stderr)}"
-        )
+    logger.debug(f"copying {remote_path} to {host}")
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        ssh.connect(hostname=host, port=22, username="root", password="")
+
+        with SCPClient(ssh.get_transport()) as scp:
+            scp.putfo(payload, remote_path)
+    except Exception as e:
+        logger.info(f"Error: {e}")
+        return False
+    return True
+
+
+def reboot_speaker(host: str) -> bool:
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        ssh.connect(hostname=host, port=22, username="root", password="")
+        ssh.exec_command("reboot")
+        ssh.close()
+        logger.debug(f"sent reboot to {host}")
+        return True
+    except:
+        logger.info(f"error rebooting {host}")
+        return False
 
 
 def read_file_from_speaker_ssh(host: str, remote_path: str, local_path: str) -> None:
@@ -179,12 +192,17 @@ def show_upnp_devices() -> None:
 def is_reachable(device: upnpclient.upnp.Device) -> bool:
     """Returns true if device is reachable via telnet, ssh, etc."""
     device_address = urlparse(device.location).hostname
+    return is_reachable(device_address)
+
+
+def addr_is_reachable(device_address: str) -> bool:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(2)  # Timeout in case of port not open
     try:
-        conn = Telnet(device_address)
-    except ConnectionRefusedError:
+        s.connect((device_address, 22))  # Port ,Here 22 is port
+        return True
+    except:
         return False
-    conn.close()
-    return True
 
 
 def add_device(device: upnpclient.upnp.Device) -> bool:

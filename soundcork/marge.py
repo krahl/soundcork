@@ -423,6 +423,10 @@ def account_full_xml(account: str, datastore: "DataStore") -> ET.Element:
     return account_elem
 
 
+def account_sources_xml(account: str, datastore: "DataStore") -> ET.Element:
+    return all_sources_xml(datastore.get_configured_sources(account))
+
+
 def software_update_xml() -> ET.Element:
     # <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     # <software_update><softwareUpdateLocation></softwareUpdateLocation></software_update>

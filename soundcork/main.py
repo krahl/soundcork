@@ -33,6 +33,7 @@ from soundcork.groups import get_groups_router
 from soundcork.groups_service import get_groups_service_router
 from soundcork.marge import (
     account_full_xml,
+    account_sources_xml,
     add_device_to_account,
     add_recent,
     add_source_to_account,
@@ -193,6 +194,10 @@ def etag_for_recents(request: Request) -> str:
 
 def etag_for_account(request: Request) -> str:
     return str(datastore.etag_for_account(str(request.path_params.get("account"))))
+
+
+def etag_for_sources(request: Request) -> str:
+    return str(datastore.etag_for_sources(str(request.path_params.get("account"))))
 
 
 def etag_for_swupdate(request: Request) -> str:
@@ -468,6 +473,24 @@ async def post_account_login(
     # just making this up
     response.headers["Credentials"] = "3432143243243432143fdafd"
     return response
+
+
+@app.get(
+    "/marge/streaming/account/{account}/sources",
+    response_class=BoseXMLResponse,
+    tags=["marge"],
+    dependencies=[
+        Depends(
+            Etag(
+                etag_gen=etag_for_sources,
+                weak=False,
+            )
+        )
+    ],
+)
+def get_account_sources(account: Annotated[str, Path(pattern=ACCOUNT_RE)]) -> str:
+    xml = account_sources_xml(account, datastore)
+    return bose_xml_str(xml)
 
 
 @app.post(

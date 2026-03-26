@@ -178,11 +178,11 @@ async def power_on(request: Request, response: Response) -> Response:
 
 
 @app.post(
-    "/marge/oauth/device/{device_id}/music/musicprovider/{provider_id}/token/{token_type}",
+    "/marge/oauth/device/{device_id}/music/musicprovider/{provider_id}/token/",
     tags=["oauth"],
     status_code=HTTPStatus.OK,
 )
-def oauth_token_refresh(device_id: str, provider_id: str, token_type: str):
+def oauth_token_refresh(device_id: str, provider_id: str):
     """Spotify OAuth token refresh endpoint.
 
     Intercepts the speaker's token refresh requests that would normally

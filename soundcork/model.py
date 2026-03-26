@@ -172,6 +172,8 @@ class ConfiguredSource(BaseModel):
     secret_type: str
     source_key_type: str
     source_key_account: str
+    created_on: str
+    updated_on: str
 
 
 class DeviceInfo(BaseModel):
@@ -182,3 +184,15 @@ class DeviceInfo(BaseModel):
     firmware_version: str
     ip_address: str
     name: str
+    created_on: str
+    updated_on: str
+
+
+class Group(BaseModel):
+    id: str
+    name: str
+    master_id: str
+    left_id: str
+    left_ip: str
+    right_id: str
+    right_ip: str

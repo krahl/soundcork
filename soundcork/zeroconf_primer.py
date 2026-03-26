@@ -196,7 +196,7 @@ class ZeroConfPrimer:
             logger.debug("Could not resolve IP for %s/%s", account_id, device_id)
             return None
 
-    def _get_token(self) -> tuple[str, str] | None:
+    async def _get_token(self) -> tuple[str, str] | None:
         """Get a valid Spotify access token and user ID.
 
         Caches the token to avoid refreshing for every speaker.
@@ -211,7 +211,7 @@ class ZeroConfPrimer:
         if self._cached_token and now < self._token_expires_at - 120:
             return self._cached_token, user_id
 
-        token = self._spotify.get_fresh_token_sync()
+        token = await self._spotify.get_fresh_token_sync()
         if not token:
             logger.warning("Could not get Spotify access token")
             return None
@@ -220,7 +220,7 @@ class ZeroConfPrimer:
         self._token_expires_at = now + 3600  # tokens last 1 hour
         return token, user_id
 
-    def _prime_if_needed(self, speaker: TrackedSpeaker) -> bool:
+    async def _prime_if_needed(self, speaker: TrackedSpeaker) -> bool:
         """Check activeUser and prime only if empty."""
         if not speaker.ip_address:
             return False
@@ -238,14 +238,14 @@ class ZeroConfPrimer:
         except Exception:
             logger.debug("Could not check activeUser for %s", speaker.ip_address)
 
-        return self._prime_speaker(speaker)
+        return await self._prime_speaker(speaker)
 
-    def _prime_speaker(self, speaker: TrackedSpeaker) -> bool:
+    async def _prime_speaker(self, speaker: TrackedSpeaker) -> bool:
         """Send addUser to a speaker."""
         if not speaker.ip_address:
             return False
 
-        creds = self._get_token()
+        creds = await self._get_token()
         if not creds:
             return False
         token, user_id = creds

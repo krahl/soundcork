@@ -48,19 +48,20 @@ def list_speakers(
 
     speakers = []
     for device_id in device_ids:
-        try:
-            info = datastore.get_device_info(account_id, device_id)
-            speakers.append(
-                {
-                    "ipAddress": info.ip_address,
-                    "name": info.name,
-                    "deviceId": info.device_id,
-                    "type": info.product_code,
-                }
-            )
-        except Exception:
-            logger.warning("Failed to read device info for %s", device_id)
-            continue
+        if device_id:
+            try:
+                info = datastore.get_device_info(account_id, device_id)
+                speakers.append(
+                    {
+                        "ipAddress": info.ip_address,
+                        "name": info.name,
+                        "deviceId": info.device_id,
+                        "type": info.product_code,
+                    }
+                )
+            except Exception:
+                logger.warning("Failed to read device info for %s", device_id)
+                continue
 
     return {"speakers": speakers}
 

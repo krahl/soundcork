@@ -244,3 +244,13 @@ class SpotifyService:
             image_url = images[0].get("url")
 
         return {"name": name, "imageUrl": image_url}
+
+    async def get_fresh_token_sync(self) -> str:
+        return await self._get_valid_token()
+
+    def get_spotify_user_id(self) -> str:
+        accounts = self._load_accounts()
+        for account in accounts:
+            if account and account["spotifyUserId"]:
+                return account["spotifyUserId"]
+        return ""

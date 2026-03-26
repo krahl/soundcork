@@ -178,7 +178,7 @@ async def power_on(request: Request, response: Response) -> Response:
 
 
 @app.post(
-    "/oauth/device/{device_id}/music/musicprovider/{provider_id}/token/{token_type}",
+    "/marge/oauth/device/{device_id}/music/musicprovider/{provider_id}/token/{token_type}",
     tags=["oauth"],
     status_code=HTTPStatus.OK,
 )

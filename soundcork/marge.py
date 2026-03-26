@@ -220,7 +220,7 @@ def configured_source_xml(conf_source: ConfiguredSource) -> ET.Element:
     )
     credential = ET.SubElement(source, "credential")
     credential.text = conf_source.secret
-    credential.attrib["type"] = "token"
+    credential.attrib["type"] = conf_source.secret_type
     ET.SubElement(source, "name").text = conf_source.source_key_account
     ET.SubElement(source, "sourceproviderid").text = str(
         PROVIDERS.index(conf_source.source_key_type) + 1

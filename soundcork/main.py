@@ -182,7 +182,7 @@ async def power_on(request: Request, response: Response) -> Response:
     tags=["oauth"],
     status_code=HTTPStatus.OK,
 )
-def oauth_token_refresh(device_id: str, provider_id: str):
+async def oauth_token_refresh(device_id: str, provider_id: str):
     """Spotify OAuth token refresh endpoint.
 
     Intercepts the speaker's token refresh requests that would normally
@@ -199,7 +199,7 @@ def oauth_token_refresh(device_id: str, provider_id: str):
         )
         return Response(status_code=404)
 
-    token = spotify_service.get_fresh_token_sync()
+    token = await spotify_service.get_fresh_token_sync()
     if not token:
         logger.warning(
             "OAuth token refresh failed — no Spotify token available (device=%s)",

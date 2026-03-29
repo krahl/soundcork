@@ -11,6 +11,23 @@ logger = logging.getLogger(__name__)
 
 
 class CombinedDevice(BaseModel):
+    """Device: either detected, configured, or both
+
+    A Device that's at least one of:
+    - A physical SoundTouch speaker detected on the network
+    - A configured DeviceInfo block stored in the datastore.
+        
+    Property:
+    - id: Bose-issued unique speaker ID from DeviceInfo
+    - ip: The speaker's IP address
+    - name: Human-readable speaker name
+    - online: Discoverable on the network as of last-update to this object. Not updated on disconnect.
+    - account: Account ID
+    - in_soundcork: In the soundcork datastore
+    - marge_server: API this speaker uses for Marge: (ie. Bose, or this Soundcork instance)
+    - reachable:  Has been configured (ie. with a USB key) to have shell-access available.
+    - st_device: SoundTouchDevice instance as discovered by BoseSoundTouchApi
+    """
     id: str
     ip: str
     name: str
@@ -67,6 +84,8 @@ class Speakers:
                             account_id, device_id
                         )
                         cd = CombinedDevice(
+                            # If the IP changes on a device reboot, it would have made a `/power_on`
+                            # call to Soundcork, which will have already updated the datastore.
                             id=device_id,
                             ip=device_info.ip_address,
                             name=device_info.name,
@@ -110,6 +129,6 @@ class Speakers:
             elif st_device.StreamingUrl == f"{self._settings.base_url}/marge":
                 sc_device.marge_server = "Soundcork"
             else:
-                sc_device.marge_server = "Unknown"
+                sc_device.marge_server = f"Unknown ({st_device.StreamingUrl})"
 
         return combined_devices

@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 
 
+class SpotifyTokenRefreshError(Exception):
+    def __init__(self, status_code: int, payload: dict[str, str]):
+        super().__init__(payload.get("error_description") or payload.get("error") or "")
+        self.status_code = status_code
+        self.payload = payload
+
+
 class SpotifyService:
     def __init__(self, settings: Settings | None = None):
         self._settings = settings or Settings()
@@ -64,18 +71,35 @@ class SpotifyService:
         try:
             with urllib.request.urlopen(request) as response:
                 return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            response_body = exc.read().decode("utf-8", errors="replace")
+            try:
+                payload = json.loads(response_body)
+            except json.JSONDecodeError:
+                payload = {
+                    "error": "spotify_refresh_failed",
+                    "error_description": response_body or str(exc.reason),
+                }
+            logger.error("Spotify token refresh failed: %s", payload)
+            raise SpotifyTokenRefreshError(exc.code, payload) from exc
         except (urllib.error.URLError, json.JSONDecodeError):
             logger.exception("Spotify token refresh failed")
             return None
 
-    def get_fresh_token_sync(self) -> str | None:
-        accounts = self._load_accounts()
-        if not accounts:
-            return None
-
+    def get_fresh_token_sync(self, refresh_token: str = "") -> str | None:
         if not (
             self._settings.spotify_client_id and self._settings.spotify_client_secret
         ):
+            return None
+
+        if refresh_token:
+            token_data = self._refresh_access_token(refresh_token)
+            if not token_data:
+                return None
+            return token_data.get("access_token")
+
+        accounts = self._load_accounts()
+        if not accounts:
             return None
 
         account = accounts[0]

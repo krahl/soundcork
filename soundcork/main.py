@@ -64,7 +64,7 @@ from soundcork.model import (
 )
 from soundcork.ui.speakers import Speakers
 from soundcork.utils import strip_element_text
-from soundcork.spotify_service import SpotifyService
+from soundcork.spotify_service import SpotifyService, SpotifyTokenRefreshError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -302,11 +302,25 @@ def tunein_saved_preset_items(auth_token: str) -> list[dict]:
     return items
 
 
-def spotify_token_refresh_response(provider_id: str) -> Response:
+async def spotify_token_refresh_response(provider_id: str, request: Request) -> Response:
     if provider_id != "15":
         return Response(status_code=HTTPStatus.NOT_FOUND)
 
-    token = spotify_service.get_fresh_token_sync()
+    refresh_token = ""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    if isinstance(payload, dict):
+        raw_refresh_token = payload.get("refresh_token", "")
+        if isinstance(raw_refresh_token, str):
+            refresh_token = raw_refresh_token
+
+    try:
+        token = spotify_service.get_fresh_token_sync(refresh_token)
+    except SpotifyTokenRefreshError as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.payload)
     if not token:
         return JSONResponse(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -645,8 +659,7 @@ async def stockholm_oauth_token_refresh(
     client_id: str,
     request: Request,
 ) -> Response:
-    await request.body()
-    return spotify_token_refresh_response(provider_id)
+    return await spotify_token_refresh_response(provider_id, request)
 
 
 @app.post(
@@ -659,8 +672,7 @@ async def speaker_oauth_token_refresh(
     token_type: str,
     request: Request,
 ) -> Response:
-    await request.body()
-    return spotify_token_refresh_response(provider_id)
+    return await spotify_token_refresh_response(provider_id, request)
 
 
 @app.get(

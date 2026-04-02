@@ -66,7 +66,7 @@ def preset_xml(preset: Preset, conf_sources_list: list[ConfiguredSource]) -> ET.
     return preset_element
 
 
-def presets_xml(datastore: "DataStore", account: str, device: str) -> ET.Element:
+def presets_xml(datastore: "DataStore", account: str, device: str = "") -> ET.Element:
     conf_sources_list = datastore.get_configured_sources(account, device)
 
     presets_list = datastore.get_presets(account, device)
@@ -360,28 +360,45 @@ def add_recent(
     return recent_element
 
 
-def provider_settings_xml(account: str) -> ET.Element:
+def provider_settings_xml(account: str, provider_id: str = "") -> ET.Element:
     # this seems to report information like if you're eligible for a free
     # trial
-    provider_settings = ET.Element("providerSettings")
-    p_setting = ET.SubElement(provider_settings, "providerSetting")
-    ET.SubElement(p_setting, "boseId").text = account
-    ET.SubElement(p_setting, "keyName").text = "ELIGIBLE_FOR_TRIAL"
-    ET.SubElement(p_setting, "value").text = "true"
-    ET.SubElement(p_setting, "providerId").text = "14"
-    return provider_settings
+    if provider_id:
+        eligibilty = ET.Element("providerSettings")
+        ET.SubElement(eligibilty, "isEligible").text = "false"
+        return eligibilty
+    else:
+        provider_settings = ET.Element("providerSettings")
+        p_setting = ET.SubElement(provider_settings, "providerSetting")
+        ET.SubElement(p_setting, "boseId").text = account
+        ET.SubElement(p_setting, "keyName").text = "ELIGIBLE_FOR_TRIAL"
+        ET.SubElement(p_setting, "value").text = "true"
+        ET.SubElement(p_setting, "providerId").text = "14"
+        return provider_settings
 
 
 def account_full_xml(account: str, datastore: "DataStore") -> ET.Element:
     account_elem = ET.Element("account")
     account_elem.attrib["id"] = account
     ET.SubElement(account_elem, "accountStatus").text = "OK"
-    devices_elem = ET.SubElement(account_elem, "devices")
-    last_device_id = ""
+    account_elem.append(account_devices_xml(account, datastore))
+
+    ET.SubElement(account_elem, "mode").text = "global"
+
+    # FIXME we can get this from the language endpoint but it returns a
+    # number rather than a language code
+    ET.SubElement(account_elem, "preferredLanguage").text = "en"
+    account_elem.append(provider_settings_xml(account))
+    account_elem.append(all_sources_xml(datastore.get_configured_sources(account)))
+
+    return account_elem
+
+
+def account_devices_xml(account: str, datastore: "DataStore") -> ET.Element:
+    devices_elem = ET.Element("devices")
     for device_id in datastore.list_devices(account):
         if not device_id:
             continue
-        last_device_id = device_id
         device_info = datastore.get_device_info(account, device_id)
 
         device_elem = ET.SubElement(devices_elem, "device")
@@ -409,18 +426,7 @@ def account_full_xml(account: str, datastore: "DataStore") -> ET.Element:
             device_info.device_serial_number
         )
         ET.SubElement(device_elem, "updatedOn").text = device_info.updated_on
-
-    ET.SubElement(account_elem, "mode").text = "global"
-
-    # FIXME we can get this from the language endpoint but it returns a
-    # number rather than a language code
-    ET.SubElement(account_elem, "preferredLanguage").text = "en"
-    account_elem.append(provider_settings_xml(account))
-    account_elem.append(
-        all_sources_xml(datastore.get_configured_sources(account, last_device_id))
-    )
-
-    return account_elem
+    return devices_elem
 
 
 def account_sources_xml(account: str, datastore: "DataStore") -> ET.Element:

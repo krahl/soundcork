@@ -9,16 +9,20 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_etag import Etag
 
 from soundcork.admin import get_admin_router
 from soundcork.bmx import (
     play_custom_stream,
+    tunein_navigation,
     tunein_playback,
     tunein_playback_podcast,
     tunein_podcast_info,
+    tunein_root_navigation,
+    tunein_search_navigation,
+    tunein_token,
 )
 from soundcork.config import Settings
 from soundcork.constants import ACCOUNT_RE, DEVICE_RE
@@ -32,12 +36,15 @@ from soundcork.devices import (
 from soundcork.groups import get_groups_router
 from soundcork.groups_service import get_groups_service_router
 from soundcork.marge import (
+    account_devices_xml,
     account_full_xml,
+    account_presets_all_xml,
     account_sources_xml,
     add_device_to_account,
     add_recent,
     add_source_to_account,
     delete_preset,
+    eligibility_xml,
     presets_xml,
     provider_settings_xml,
     recents_xml,
@@ -57,6 +64,7 @@ from soundcork.model import (
 )
 from soundcork.ui.speakers import Speakers
 from soundcork.utils import strip_element_text
+from soundcork.spotify_service import SpotifyService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,6 +75,7 @@ logger = logging.getLogger(__name__)
 datastore = DataStore()
 settings = Settings()
 speakers = Speakers(datastore, settings)
+spotify_service = SpotifyService(settings)
 
 
 @asynccontextmanager
@@ -206,6 +215,121 @@ def etag_for_swupdate(request: Request) -> str:
     return "1663726921993"
 
 
+def bose_xml_response(
+    xml: ET.Element,
+    *,
+    version: str = "v1.2",
+    headers: dict[str, str] | None = None,
+) -> Response:
+    response = Response(content=bose_xml_str(xml), media_type="application/xml")
+    response.headers["content-type"] = f"application/vnd.bose.streaming-{version}+xml"
+    for key, value in (headers or {}).items():
+        response.headers[key] = value
+    return response
+
+
+def stockholm_unauthorized_response() -> Response:
+    return Response(
+        content=(
+            "<!doctype html><html lang=en><title>401 Unauthorized</title>"
+            "<h1>Unauthorized</h1><p>Authorization not set. No access token found.</p>"
+        ),
+        media_type="text/html",
+        status_code=HTTPStatus.UNAUTHORIZED,
+    )
+
+
+def filter_bmx_services(bmx_response: BmxResponse) -> BmxResponse:
+    if settings.extended_bmx_registry:
+        return bmx_response
+
+    allowed_services = {"TUNEIN", "LOCAL_INTERNET_RADIO", "SIRIUSXM_EVEREST"}
+    bmx_response.bmx_services = [
+        service
+        for service in bmx_response.bmx_services
+        if service.id.name in allowed_services
+    ]
+    return bmx_response
+
+
+def account_for_source_secret(source_type: str, secret: str) -> str | None:
+    for account in datastore.list_accounts():
+        try:
+            configured_sources = datastore.get_configured_sources(account)
+        except HTTPException:
+            continue
+
+        if any(
+            source.source_key_type == source_type and source.secret == secret
+            for source in configured_sources
+        ):
+            return account
+    return None
+
+
+def tunein_saved_preset_items(auth_token: str) -> list[dict]:
+    account = account_for_source_secret("TUNEIN", auth_token)
+    if not account:
+        return []
+
+    presets = datastore.get_presets(account, "")
+    items = []
+    for preset in presets:
+        if preset.source != "TUNEIN" and not preset.location.startswith(
+            "/v1/playback/station/"
+        ):
+            continue
+
+        items.append(
+            {
+                "_links": {
+                    "bmx_playback": {
+                        "href": preset.location,
+                        "type": preset.type or "stationurl",
+                    },
+                    "bmx_preset": {
+                        "containerArt": preset.container_art,
+                        "href": preset.location,
+                        "name": preset.name,
+                        "type": preset.type or "stationurl",
+                    },
+                },
+                "imageUrl": preset.container_art,
+                "name": preset.name,
+                "subtitle": "",
+            }
+        )
+    return items
+
+
+def spotify_token_refresh_response(provider_id: str) -> Response:
+    if provider_id != "15":
+        return Response(status_code=HTTPStatus.NOT_FOUND)
+
+    token = spotify_service.get_fresh_token_sync()
+    if not token:
+        return JSONResponse(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            content={
+                "error": "no_token",
+                "error_description": "No Spotify account linked",
+            },
+        )
+
+    return JSONResponse(
+        content={
+            "access_token": token,
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "scope": (
+                "streaming user-read-email user-read-private "
+                "playlist-read-private playlist-read-collaborative "
+                "user-library-read"
+            ),
+        }
+    )
+
+
 @app.get(
     "/marge/streaming/account/{account}/device/{device}/presets",
     response_class=BoseXMLResponse,
@@ -226,6 +350,16 @@ def account_presets(
 ):
     xml = presets_xml(datastore, account, device)
     return bose_xml_str(xml)
+
+
+@app.get(
+    "/marge/streaming/account/{account}/presets/all",
+    tags=["marge"],
+    dependencies=[Depends(Etag(etag_gen=etag_for_presets, weak=False))],
+)
+def account_presets_all(account: Annotated[str, Path(pattern=ACCOUNT_RE)]) -> Response:
+    xml = account_presets_all_xml(datastore, account)
+    return bose_xml_response(xml, version="v1.1")
 
 
 @app.put(
@@ -288,6 +422,20 @@ def account_recents(
 
 
 @app.get(
+    "/marge/streaming/account/{account}/devices",
+    tags=["marge"],
+    dependencies=[Depends(Etag(etag_gen=etag_for_account, weak=False))],
+)
+def account_devices(account: Annotated[str, Path(pattern=ACCOUNT_RE)]) -> Response:
+    xml = account_devices_xml(datastore, account)
+    return bose_xml_response(
+        xml,
+        version="v1.1",
+        headers={"Method_name": "getDevices"},
+    )
+
+
+@app.get(
     "/marge/streaming/account/{account}/provider_settings",
     response_class=BoseXMLResponse,
     tags=["marge"],
@@ -304,6 +452,16 @@ def account_recents(
 def account_provider_settings(account: Annotated[str, Path(pattern=ACCOUNT_RE)]):
     xml = provider_settings_xml(account)
     return bose_xml_str(xml)
+
+
+@app.post(
+    "/marge/streaming/music/musicprovider/{provider_id}/is_eligible",
+    tags=["marge"],
+)
+async def account_music_provider_eligibility(provider_id: str, request: Request) -> Response:
+    await request.body()
+    xml = eligibility_xml(False)
+    return bose_xml_response(xml, version="v1.1")
 
 
 @app.get(
@@ -477,6 +635,34 @@ async def post_account_login(
     return response
 
 
+@app.post(
+    "/marge/oauth/account/{account}/music/musicprovider/{provider_id}/token/{client_id}",
+    tags=["oauth"],
+)
+async def stockholm_oauth_token_refresh(
+    account: Annotated[str, Path(pattern=ACCOUNT_RE)],
+    provider_id: str,
+    client_id: str,
+    request: Request,
+) -> Response:
+    await request.body()
+    return spotify_token_refresh_response(provider_id)
+
+
+@app.post(
+    "/oauth/device/{device_id}/music/musicprovider/{provider_id}/token/{token_type}",
+    tags=["oauth"],
+)
+async def speaker_oauth_token_refresh(
+    device_id: str,
+    provider_id: str,
+    token_type: str,
+    request: Request,
+) -> Response:
+    await request.body()
+    return spotify_token_refresh_response(provider_id)
+
+
 @app.get(
     "/marge/streaming/account/{account}/sources",
     response_class=BoseXMLResponse,
@@ -549,7 +735,56 @@ def bmx_services() -> BmxResponse:
         # TODO:  we're sending askAgainAfter hardcoded, but that value actually
         # varies.
         bmx_response = BmxResponse.model_validate_json(bmx_response_json)
-        return bmx_response
+        return filter_bmx_services(bmx_response)
+
+
+@app.post("/bmx/tunein/v1/token", tags=["bmx"])
+async def bmx_tunein_token(request: Request) -> dict:
+    payload = await request.json()
+    refresh_token = payload.get("refresh_token", "")
+    if not refresh_token:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="refresh_token required")
+    return tunein_token(refresh_token)
+
+
+@app.get("/bmx/tunein/v1/navigate", tags=["bmx"], response_model=None)
+def bmx_tunein_navigate(request: Request):
+    auth_token = request.headers.get("Authorization", "")
+    return tunein_root_navigation(
+        auth_token,
+        favorites_items=tunein_saved_preset_items(auth_token),
+    )
+
+
+@app.get(
+    "/bmx/tunein/v1/navigate/{encoded_target:path}",
+    tags=["bmx"],
+    response_model=None,
+)
+def bmx_tunein_navigate_target(encoded_target: str, request: Request):
+    auth_token = request.headers.get("Authorization", "")
+
+    try:
+        return tunein_navigation(
+            encoded_target,
+            auth_token,
+            favorites_items=tunein_saved_preset_items(auth_token),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc))
+
+
+@app.get("/bmx/tunein/v1/search", tags=["bmx"], response_model=None)
+def bmx_tunein_search(request: Request):
+    auth_token = request.headers.get("Authorization", "")
+    query = request.query_params.get("q", "")
+    return tunein_search_navigation(query, auth_token)
+
+
+@app.post("/bmx/tunein/v1/report", tags=["bmx"], status_code=HTTPStatus.OK)
+async def bmx_tunein_report(request: Request):
+    await request.body()
+    return
 
 
 @app.get(

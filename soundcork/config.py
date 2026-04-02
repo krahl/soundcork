@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     base_url: str = ""
     data_dir: str = ""
+    extended_bmx_registry: bool = False
+    spotify_client_id: str = ""
+    spotify_client_secret: str = ""
+    spotify_redirect_uri: str = "ueberboese-login://spotify"
     model_config = SettingsConfigDict(
         # `.env.private` takes priority over `.env.shared`
         env_file=(".env.shared", ".env.private")

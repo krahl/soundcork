@@ -220,7 +220,7 @@ def configured_source_xml(conf_source: ConfiguredSource) -> ET.Element:
     )
     credential = ET.SubElement(source, "credential")
     credential.text = conf_source.secret
-    credential.attrib["type"] = "token"
+    credential.attrib["type"] = conf_source.secret_type or "token"
     ET.SubElement(source, "name").text = conf_source.source_key_account
     ET.SubElement(source, "sourceproviderid").text = str(
         PROVIDERS.index(conf_source.source_key_type) + 1
@@ -370,6 +370,47 @@ def provider_settings_xml(account: str) -> ET.Element:
     ET.SubElement(p_setting, "value").text = "true"
     ET.SubElement(p_setting, "providerId").text = "14"
     return provider_settings
+
+
+def account_presets_all_xml(datastore: "DataStore", account: str) -> ET.Element:
+    return presets_xml(datastore, account, "")
+
+
+def account_devices_xml(datastore: "DataStore", account: str) -> ET.Element:
+    devices_elem = ET.Element("devices")
+    for device_id in datastore.list_devices(account):
+        if not device_id:
+            continue
+        device_info = datastore.get_device_info(account, device_id)
+
+        device_elem = ET.SubElement(devices_elem, "device")
+        device_elem.attrib["deviceid"] = device_id
+        attached_product_elem = ET.SubElement(device_elem, "attachedProduct")
+        attached_product_elem.attrib["product_code"] = device_info.product_code
+        ET.SubElement(attached_product_elem, "components")
+        ET.SubElement(attached_product_elem, "productlabel").text = (
+            device_info.product_code
+        )
+        ET.SubElement(attached_product_elem, "serialnumber").text = (
+            device_info.product_serial_number
+        )
+        ET.SubElement(device_elem, "createdOn").text = (
+            device_info.created_on or DEFAULT_DATESTR
+        )
+        ET.SubElement(device_elem, "ipaddress").text = device_info.ip_address
+        ET.SubElement(device_elem, "name").text = device_info.name
+        ET.SubElement(device_elem, "updatedOn").text = (
+            device_info.updated_on or DEFAULT_DATESTR
+        )
+
+    devices_elem.append(provider_settings_xml(account))
+    return devices_elem
+
+
+def eligibility_xml(is_eligible: bool = False) -> ET.Element:
+    eligibility = ET.Element("eligibility")
+    ET.SubElement(eligibility, "isEligible").text = str(is_eligible).lower()
+    return eligibility
 
 
 def account_full_xml(account: str, datastore: "DataStore") -> ET.Element:
@@ -567,14 +608,19 @@ def modify_group(
 
 def add_source_to_account(datastore: "DataStore", account: str, xml: str) -> ET.Element:
     source_elem = ET.fromstring(xml)
-    credential = strip_element_text(source_elem.find("credential"))
+    credential_elem = source_elem.find("credential")
+    credential = strip_element_text(credential_elem)
     username = strip_element_text(source_elem.find("username"))
     source_provider_id = strip_element_text(source_elem.find("sourceproviderid"))
     source_key_type = PROVIDERS[int(source_provider_id) - 1]
     source_name = strip_element_text(source_elem.find("sourcename"))
     # if we see something that uses a secret type other than 'token' then we'll learn
     # how that's set
-    secret_type = "token"
+    secret_type = (
+        credential_elem.attrib.get("type", "token")
+        if credential_elem is not None
+        else "token"
+    )
 
     new_source = ConfiguredSource(
         id="",

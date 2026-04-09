@@ -275,7 +275,7 @@ def tunein_sections_ashx(
                 continue
 
             if len(body) == 1 or subsection is not None:
-                layout = ""
+                layout = "responsiveGrid"
                 max_count = 500
             else:
                 layout = "ribbon"
@@ -288,7 +288,7 @@ def tunein_sections_ashx(
                 type = nav_item.get("type", "")
                 if type == "audio":
                     section_items.append(tunein_navigate_playitem(nav_item))
-                elif type == "audio":
+                elif type == "link":
                     section_items.append(tunein_navigate_link(nav_item))
                 else:
                     logger.info(f"unknown type {type} for {nav_item}")

@@ -347,7 +347,6 @@ def tunein_navigate_playitem(item: dict) -> BmxNavItem:
 
 def tunein_navigate_link(item: dict) -> BmxNavItem:
     url = f'{item.get("URL", "")}&render=json'
-    logger.info(f"creating link for url {url}")
     enc_url = base64.urlsafe_b64encode(url.encode()).decode()
     return BmxNavItem(
         links={

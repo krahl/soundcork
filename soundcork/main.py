@@ -16,6 +16,7 @@ from fastapi_etag import Etag
 from soundcork.admin import get_admin_router
 from soundcork.bmx import (
     play_custom_stream,
+    tunein_navigate_v1,
     tunein_playback,
     tunein_playback_podcast,
     tunein_podcast_info,
@@ -52,6 +53,7 @@ from soundcork.marge import (
     update_preset,
 )
 from soundcork.model import (
+    BmxNavResponse,
     BmxPlaybackResponse,
     BmxPodcastInfoResponse,
     BmxResponse,
@@ -638,6 +640,27 @@ def bmx_podcast_info(episode_id: str, request: Request) -> BmxPodcastInfoRespons
 )
 def bmx_playback_podcast(episode_id: str, request: Request) -> BmxPlaybackResponse:
     return tunein_playback_podcast(episode_id)
+
+
+@app.get(
+    "/bmx/tunein/v1/navigate",
+    response_model_exclude_none=True,
+    tags=["bmx"],
+)
+@app.get(
+    "/bmx/tunein/v1/navigate/{encoded_uri}",
+    response_model_exclude_none=True,
+    tags=["bmx"],
+)
+@app.get(
+    "/bmx/tunein/v1/navigate/sub/{subsection}/{encoded_uri}",
+    response_model_exclude_none=True,
+    tags=["bmx"],
+)
+def bmx_tunein_navigate(
+    encoded_uri: str = "", subsection: int | None = None
+) -> BmxNavResponse:
+    return tunein_navigate_v1(encoded_uri, subsection)
 
 
 @app.get("/core02/svc-bmx-adapter-orion/prod/orion/station", tags=["bmx"])

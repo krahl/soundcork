@@ -218,8 +218,26 @@ def tunein_navigate(
 ) -> BmxNavResponse:
     """
     tunein navigation has a base level /v1/navigate plus an optional /sub/{n}
-    to indicate a particular subsection, plus an optional base64-encoded url
-    to show the source of the
+    to indicate a particular subsection, plus an optional base64-encoded uri
+    to show the source url used to populate the navigation. if no encoded uri
+    is included, use the top level TUNEIN_NAVIGATE_ASHX instead.
+
+    the tunein browse pages get a bit large for a single page, for instance where
+    you request local radio and it returns every single FM station, every single
+    AM station, and every local internet-only station from a single request. so
+    bose by default would collapse each category into a 'ribbon' menu where it
+    would show the first 5 entries and then a 'more' link. the 'more' link would
+    then call the /v1/navigate/sub/{subsection number}/{encoded uri} endpoint,
+    which in turn would show all the entries in the particular subsection. so with
+    the above example, /v1/navigate/{local-radio-uri} would display three 'ribbon'
+    menus with 5 FM, 5 AM, and 5 internet-only stations. if you clicked on the
+    'more' button for internet-only, it would call /v1/navigate/sub/2/(local-radio-uri},
+    which in turn would display all of the entries in the 'internet-only' subsection
+    (and only those, not the AM or FM stations) as a single grid.
+
+    The actual bose implementation seems to have some customized behavior where they
+    display lists that don't match any tunein endpoints that I was able to find. In
+    theory we could build such a custom menu, too, but that's a bit much for a first pass.
     """
     bmx_search_link = None
     if encoded_uri:
@@ -232,7 +250,11 @@ def tunein_navigate(
             "href": "/v1/search?q={query}",
             "templated": True,
         }
+
+    # this builds all of the sections
     sections = tunein_sections_ashx(tunein_uri, not subsection, subsection)
+
+    # for the self link
     if subsection is not None:
         subsection_part = f"/sub/{subsection}"
     else:
@@ -259,6 +281,7 @@ def tunein_sections_ashx(
     contents = urllib.request.urlopen(tunein_uri).read()
     content_str = contents.decode("utf-8")
     content_json = json.loads(content_str)
+    # by default just show all of our items as a simple list
     layout = "list"
     sections = []
     items = []
@@ -267,15 +290,22 @@ def tunein_sections_ashx(
     for idx, item in enumerate(body):
         type = item.get("type", "")
         if type:
+            # i only saw top-level items that were of type "link"; "audio" items seemed
+            # only to be included as chlidren of subsections.
             if type == "link":
                 items.append(tunein_navigate_link(item))
             else:
                 logger.info(f"top-level item has type {type}: {item}")
         else:
             logger.debug(f"subsection {subsection} idx {idx}")
+            # if we've requested a single subsection then only show items
+            # in that subsection
             if subsection is not None and not subsection == idx:
                 continue
 
+            # if there is only one subsection or we've requested a
+            # specific subsection, then show all entries as a grid.
+            # otherwise show just a ribbon of the first 5 entries.
             if len(body) == 1 or subsection is not None:
                 layout = "responsiveGrid"
                 max_count = 500

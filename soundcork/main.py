@@ -32,6 +32,7 @@ from soundcork.devices import (
 from soundcork.groups import get_groups_router
 from soundcork.groups_service import get_groups_service_router
 from soundcork.marge import (
+    account_devices_xml,
     account_full_xml,
     account_sources_xml,
     add_device_to_account,
@@ -228,6 +229,30 @@ def account_presets(
     return bose_xml_str(xml)
 
 
+@app.get(
+    "/marge/streaming/account/{account}/presets/all",
+    response_class=BoseXMLResponse,
+    tags=["marge"],
+    dependencies=[
+        Depends(
+            Etag(
+                etag_gen=etag_for_presets,
+                weak=False,
+            )
+        )
+    ],
+)
+def account_presets_all(
+    account: Annotated[str, Path(pattern=ACCOUNT_RE)],
+):
+    # TODO bose actually returns a full set of all presets that have ever
+    # been set. we could support that at least for all presets that were
+    # ever set in soundcork. but for now just returning the current
+    # presets should be ok.
+    xml = presets_xml(datastore, account)
+    return bose_xml_str(xml)
+
+
 @app.put(
     "/marge/streaming/account/{account}/device/{device}/preset/{preset_number}",
     response_class=BoseXMLResponse,
@@ -294,7 +319,7 @@ def account_recents(
     dependencies=[
         Depends(
             Etag(
-                etag_gen=etag_for_recents,
+                etag_gen=etag_for_sources,
                 weak=False,
                 extra_headers={"method_name": "getProviderSettings"},
             )
@@ -303,6 +328,17 @@ def account_recents(
 )
 def account_provider_settings(account: Annotated[str, Path(pattern=ACCOUNT_RE)]):
     xml = provider_settings_xml(account)
+    return bose_xml_str(xml)
+
+
+@app.post(
+    "/marge/streaming/music/musicprovider/{provider_id}/is_eligible",
+    response_class=BoseXMLResponse,
+    tags=["marge"],
+)
+def account_provider_eligibility(provider_id: str):
+    # we could parse out the payload and get the account id but why bother?
+    xml = provider_settings_xml("fake", provider_id)
     return bose_xml_str(xml)
 
 
@@ -333,6 +369,25 @@ def software_update(account: Annotated[str, Path(pattern=ACCOUNT_RE)]):
 )
 def account_full(account: Annotated[str, Path(pattern=ACCOUNT_RE)]) -> str:
     xml = account_full_xml(account, datastore)
+    return bose_xml_str(xml)
+
+
+@app.get(
+    "/marge/streaming/account/{account}/devices",
+    response_class=BoseXMLResponse,
+    tags=["marge"],
+    dependencies=[
+        Depends(
+            Etag(
+                etag_gen=etag_for_account,
+                weak=False,
+                extra_headers={"method_name": "getDevices"},
+            )
+        )
+    ],
+)
+def account_devices(account: Annotated[str, Path(pattern=ACCOUNT_RE)]) -> str:
+    xml = account_devices_xml(account, datastore)
     return bose_xml_str(xml)
 
 
@@ -444,6 +499,10 @@ async def post_account_login(
         login_xml = ET.fromstring(xml)
         if login_xml:
             username = strip_element_text(login_xml.find("username"))
+            # only use the beginning of the username so that we can accept
+            # the account as an email address
+            if len(username) > 7:
+                username = username[:7]
             account_pattern = re.compile(ACCOUNT_RE)
             if account_pattern.match(username):
                 account_id = username

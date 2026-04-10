@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from soundcork.config import Settings
 from soundcork.constants import DEFAULT_DATESTR, PROVIDERS
-from soundcork.devices import get_device_by_id, read_device_info
+from soundcork.devices import get_device_by_id, hostname_for_device, read_device_info
 from soundcork.model import (
     ConfiguredSource,
     ContentItem,
@@ -464,7 +464,7 @@ def add_device_to_account(
         if not device:
             raise RuntimeError(f"Unknown device {device_id}")
 
-        device_xml = read_device_info(device)
+        device_xml = read_device_info(hostname_for_device(device))
         device_elem = ET.fromstring(device_xml)
         datastore.add_device(
             account, device_id, datastore.device_info_from_device_info_xml(device_elem)

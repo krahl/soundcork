@@ -26,6 +26,7 @@ from soundcork.datastore import DataStore
 from soundcork.devices import (
     add_device,
     get_bose_devices,
+    hostname_for_device,
     read_device_info,
     read_recents,
 )
@@ -689,7 +690,7 @@ def test_scan_recents():
     devices = get_bose_devices()
     recents = []
     for device in devices:
-        recents.append(read_recents(device))
+        recents.append(read_recents(hostname_for_device(device)))
     return recents
 
 
@@ -699,7 +700,7 @@ def scan_devices():
     devices = get_bose_devices()
     device_infos = {}
     for device in devices:
-        info_elem = ET.fromstring(read_device_info(device))
+        info_elem = ET.fromstring(read_device_info(hostname_for_device(device)))
         device_infos[device.udn] = {
             "device_id": info_elem.attrib.get("deviceID", ""),
             "name": info_elem.find("name").text,  # type: ignore
@@ -714,7 +715,7 @@ def scan_devices():
 def add_device_to_datastore(device_id: str):
     devices = get_bose_devices()
     for device in devices:
-        info_elem = ET.fromstring(read_device_info(device))
+        info_elem = ET.fromstring(read_device_info(hostname_for_device(device)))
         if info_elem.attrib.get("deviceID", "") == device_id:
             success = add_device(device)
             return {device_id: success}

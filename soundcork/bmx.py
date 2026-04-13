@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 TUNEIN_DESCRIBE = "https://opml.radiotime.com/describe.ashx?id=%s"
 TUNEIN_STREAM = "http://opml.radiotime.com/Tune.ashx?id=%s&formats=mp3,aac,ogg"
 TUNEIN_NAVIGATE_ASHX = "http://opml.radiotime.com/?render=json"
+# TUNEIN_SEARCH = "https://api.radiotime.com/profiles?fulltextsearch=true&version=1.3&query="
+TUNEIN_SEARCH = "https://api.radiotime.com/profiles?fulltextsearch=true&version=1.3&serial=4e060500-d897-4b65-9c15-ae6c2d7a51e9&query="
 
 
 # TODO:  determine how listen_id is used, if at all
@@ -383,6 +385,148 @@ def tunein_navigate_playitem(item: dict) -> BmxNavItem:
 
 
 def tunein_navigate_link(item: dict) -> BmxNavItem:
+    url = f'{item.get("URL", "")}&render=json'
+    enc_url = base64.urlsafe_b64encode(url.encode()).decode()
+    return BmxNavItem(
+        links={
+            "bmx_navigate": {
+                "href": f"/v1/navigate/{enc_url}",
+            }
+        },
+        image_url=item.get("image", ""),
+        name=item.get("text", ""),
+        subtitle=item.get("subtext", ""),
+    )
+
+
+def tunein_search_v1(query: str, subsection: str | None = None) -> BmxNavResponse:
+
+    tunein_uri = f"{TUNEIN_SEARCH}{query}"
+    bmx_search_link = {
+        "filters": [],
+        "href": "/v1/search?q={query}",
+        "templated": True,
+    }
+    contents = urllib.request.urlopen(tunein_uri).read()
+    content_str = contents.decode("utf-8")
+    content_json = json.loads(content_str)
+    # by default just show all of our items as a simple list
+    sections = []
+    items = content_json["Items"]
+
+    for idx, item in enumerate(items):
+        logger.info(
+            f"Type={item.get('Type', '')}, ContainerType={item.get('ContainerType', '')}"
+        )
+        if item.get("Type", "") == "Container":
+            logger.info(f"creating section, Title = {item.get('Title', '')}")
+            if item.get("ContainerType", "") != "NotPlayableStations":
+                sections.append(tunein_search_section(item, idx, query))
+        else:
+            logger.info(f"top-level search not a container: {item.type}")
+
+    links = {
+        "self": {"href": f"/v1/search/q={query}"},
+    }
+    return BmxNavResponse(
+        links=links,
+        bmx_sections=sections,
+        layout="classic",
+    )
+
+
+def tunein_search_section(item: dict, idx: int, query: str) -> BmxNavSection:
+    logger.info("creating container")
+    layout = "shortList"
+    pivot_url = item.get("Pivots", {}).get("More", {}).get("Url", "")
+    encoded_query = base64.urlsafe_b64encode(
+        f"{TUNEIN_SEARCH}{query}".encode()
+    ).decode()
+    if pivot_url:
+        href = f"/v1/navigate/{base64.urlsafe_b64encode(pivot_url.encode()).decode()}"
+    else:
+        href = f"/v1/navigate/sub/{idx}/{encoded_query}"
+    section_items = []
+
+    for child in item.get("Children", []):
+        child_type = child.get("Type", "")
+        if child_type == "Station":
+            section_items.append(tunein_search_playitem(child))
+        elif child_type == "Program":
+            section_items.append(tunein_search_profile(child, "Program"))
+        elif child_type == "Artist":
+            section_items.append(tunein_search_profile(child, "Artist"))
+        elif child_type == "Category":
+            category_href = child.get("Actions", {}).get("Browse", {}).get("Url", "")
+            category_href_encoded = base64.urlsafe_b64encode(
+                category_href.encode()
+            ).decode()
+            section_items.append(
+                BmxNavItem(
+                    links={
+                        "bmx_navigate": {
+                            "href": f"/v1/navigate/{category_href_encoded}"
+                        },
+                    },
+                    image_url=child.get("Image", ""),
+                    name=child.get("Title", ""),
+                    subtitle=child.get("Subtitle", ""),
+                )
+            )
+        else:
+            logger.info(f"child is type {child.get('Type', '')}")
+    return BmxNavSection(
+        links={"self": {"href": href}},
+        items=section_items,
+        layout=layout,
+        name=item.get("Title", ""),
+    )
+
+
+def tunein_search_playitem(item: dict) -> BmxNavItem:
+    href = f'/v1/playback/station/{item.get("GuideId", "")}'
+    return BmxNavItem(
+        links={
+            "bmx_playback": {
+                "href": href,
+                "type": "stationurl",
+            },
+            "bmx_preset": {
+                "container_art": item.get("Image", ""),
+                "href": href,
+                "name": item.get("Title", ""),
+                "type": "stationurl",
+            },
+        },
+        image_url=item.get("Image", ""),
+        name=item.get("Title", ""),
+        subtitle=item.get("Subtitle", ""),
+    )
+
+
+def tunein_search_profile(item: dict, name: str) -> BmxNavItem:
+    guide_id = item.get("GuideId", "")
+    api_url = item.get("Actions", {}).get("Profile", {}).get("Url", "")
+    api_url_encoded = base64.urlsafe_b64encode(api_url.encode()).decode()
+    return BmxNavItem(
+        links={
+            "bmx_navigate": {
+                "href": f"/v1/navigate/profiles/{name}/{guide_id}/{api_url_encoded}",
+            },
+            "bmx_preset": {
+                "container_art": item.get("Image", ""),
+                "href": f"/v1/preset/program/{guide_id}",
+                "name": item.get("Title", ""),
+                "type": "tracklisturl",
+            },
+        },
+        image_url=item.get("Image", ""),
+        name=item.get("Title", ""),
+        subtitle=item.get("Subtitle", ""),
+    )
+
+
+def tunein_search_link(item: dict) -> BmxNavItem:
     url = f'{item.get("URL", "")}&render=json'
     enc_url = base64.urlsafe_b64encode(url.encode()).decode()
     return BmxNavItem(

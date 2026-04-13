@@ -20,6 +20,7 @@ from soundcork.bmx import (
     tunein_playback,
     tunein_playback_podcast,
     tunein_podcast_info,
+    tunein_search_v1,
 )
 from soundcork.config import Settings
 from soundcork.constants import ACCOUNT_RE, DEVICE_RE
@@ -662,6 +663,15 @@ def bmx_tunein_navigate(
     encoded_uri: str = "", subsection: int | None = None
 ) -> BmxNavResponse:
     return tunein_navigate_v1(encoded_uri, subsection)
+
+
+@app.get(
+    "/bmx/tunein/v1/search",
+    response_model_exclude_none=True,
+    tags=["bmx"],
+)
+def bmx_tunein_search_v1(request: Request) -> BmxNavResponse:
+    return tunein_search_v1(request.query_params.get("query", ""))
 
 
 @app.get("/core02/svc-bmx-adapter-orion/prod/orion/station", tags=["bmx"])

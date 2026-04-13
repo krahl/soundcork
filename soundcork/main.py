@@ -671,7 +671,7 @@ def bmx_tunein_navigate(
     tags=["bmx"],
 )
 def bmx_tunein_search_v1(request: Request) -> BmxNavResponse:
-    return tunein_search_v1(request.query_params.get("query", ""))
+    return tunein_search_v1(request.query_params.get("q", ""))
 
 
 @app.get("/core02/svc-bmx-adapter-orion/prod/orion/station", tags=["bmx"])

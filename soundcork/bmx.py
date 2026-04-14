@@ -445,6 +445,25 @@ def tunein_navigate_profile_v1(encoded_uri: str = "") -> BmxNavResponse:
     profile_resp_str = profile_resp.decode("utf-8")
     profile_json = json.loads(profile_resp_str)
     # for profile we expect a single result
+    profile_json_item = profile_json.get("Item", {})
+
+    sections = []
+
+    # make the hero header
+    sections.append(
+        BmxNavSection(
+            items=[
+                BmxNavItem(
+                    name=profile_json_item.get("Title", ""),
+                    image_url=profile_json_item.get("Image", ""),
+                    subtitle=profile_json_item.get("Subtitle", ""),
+                )
+            ],
+            layout="hero",
+            name="",
+        ),
+    )
+
     contents_uri = (
         profile_json.get("Item", {})
         .get("Pivots", {})
@@ -457,7 +476,6 @@ def tunein_navigate_profile_v1(encoded_uri: str = "") -> BmxNavResponse:
     content_str = contents.decode("utf-8")
     content_json = json.loads(content_str)
     # by default just show all of our items as a simple list
-    sections = []
     items = content_json["Items"]
 
     for idx, item in enumerate(items):
@@ -467,7 +485,7 @@ def tunein_navigate_profile_v1(encoded_uri: str = "") -> BmxNavResponse:
         if item.get("Type", "") == "Container":
             logger.info(f"creating section, Title = {item.get('Title', '')}")
             if item.get("ContainerType", "") != "NotPlayableStations":
-                sections.append(tunein_search_section(item, idx, ""))
+                sections.append(tunein_search_section(item, idx, "", "list"))
         else:
             logger.info(f"top-level search not a container: {item.type}")
 
@@ -517,9 +535,10 @@ def tunein_search_v1(query: str, subsection: str | None = None) -> BmxNavRespons
     )
 
 
-def tunein_search_section(item: dict, idx: int, query: str) -> BmxNavSection:
+def tunein_search_section(
+    item: dict, idx: int, query: str, layout: str = "shortList"
+) -> BmxNavSection:
     logger.info("creating container")
-    layout = "shortList"
     pivot_url = item.get("Pivots", {}).get("More", {}).get("Url", "")
     encoded_query = base64.urlsafe_b64encode(
         f"{TUNEIN_SEARCH}{query}".encode()

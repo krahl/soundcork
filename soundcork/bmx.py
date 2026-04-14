@@ -438,6 +438,49 @@ def tunein_sections_jsonapi(
     return sections
 
 
+def tunein_navigate_profile_v1(encoded_uri: str = "") -> BmxNavResponse:
+    tunein_uri = base64.urlsafe_b64decode(encoded_uri).decode()
+    logger.debug(f"profile_nav tunein_uri={tunein_uri}")
+    profile_resp = urllib.request.urlopen(tunein_uri).read()
+    profile_resp_str = profile_resp.decode("utf-8")
+    profile_json = json.loads(profile_resp_str)
+    # for profile we expect a single result
+    contents_uri = (
+        profile_json.get("Item", {})
+        .get("Pivots", {})
+        .get("Contents", {})
+        .get("Url", "")
+    )
+    logger.debug(f"profile_nav contents_uri={contents_uri}")
+
+    contents = urllib.request.urlopen(contents_uri).read()
+    content_str = contents.decode("utf-8")
+    content_json = json.loads(content_str)
+    # by default just show all of our items as a simple list
+    sections = []
+    items = content_json["Items"]
+
+    for idx, item in enumerate(items):
+        logger.info(
+            f"Type={item.get('Type', '')}, ContainerType={item.get('ContainerType', '')}"
+        )
+        if item.get("Type", "") == "Container":
+            logger.info(f"creating section, Title = {item.get('Title', '')}")
+            if item.get("ContainerType", "") != "NotPlayableStations":
+                sections.append(tunein_search_section(item, idx, ""))
+        else:
+            logger.info(f"top-level search not a container: {item.type}")
+
+    links = {
+        "self": {"href": f"/v1/navigate/FIXME{encoded_uri}"},
+    }
+    return BmxNavResponse(
+        links=links,
+        bmx_sections=sections,
+        layout="classic",
+    )
+
+
 def tunein_search_v1(query: str, subsection: str | None = None) -> BmxNavResponse:
 
     tunein_uri = f"{TUNEIN_SEARCH}{query}"
@@ -490,8 +533,9 @@ def tunein_search_section(item: dict, idx: int, query: str) -> BmxNavSection:
     for child in item.get("Children", []):
         child_type = child.get("Type", "")
         if child_type == "Station":
-            logger.info("creating station")
             section_items.append(tunein_search_playitem(child))
+        elif child_type == "Topic":
+            section_items.append(tunein_search_topic(child))
         elif child_type == "Program":
             section_items.append(tunein_search_profile(child, "Program"))
         elif child_type == "Artist":
@@ -542,6 +586,32 @@ def tunein_search_playitem(item: dict) -> BmxNavItem:
         },
         image_url=item.get("Image", ""),
         name=item.get("Title", ""),
+        subtitle=item.get("Subtitle", ""),
+    )
+
+
+def tunein_search_topic(item: dict) -> BmxNavItem:
+    logger.info(f"creating topc from {item}")
+    title = item.get("Title", "")
+    encoded_name = base64.urlsafe_b64encode(title.encode()).decode()
+    href = (
+        f'/v1/playback/episodes/{item.get("GuideId", "")}?encoded_name={encoded_name}'
+    )
+    return BmxNavItem(
+        links={
+            "bmx_playback": {
+                "href": href,
+                "type": "tracklisturl",
+            },
+            "bmx_preset": {
+                "container_art": item.get("Image", ""),
+                "href": href,
+                "name": title,
+                "type": "tracklisturl",
+            },
+        },
+        image_url=item.get("Image", ""),
+        name=title,
         subtitle=item.get("Subtitle", ""),
     )
 

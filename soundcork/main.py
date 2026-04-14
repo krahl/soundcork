@@ -16,6 +16,7 @@ from fastapi_etag import Etag
 from soundcork.admin import get_admin_router
 from soundcork.bmx import (
     play_custom_stream,
+    tunein_navigate_profile_v1,
     tunein_navigate_v1,
     tunein_playback,
     tunein_playback_podcast,
@@ -659,19 +660,25 @@ def bmx_playback_podcast(episode_id: str, request: Request) -> BmxPlaybackRespon
     response_model_exclude_none=True,
     tags=["bmx"],
 )
+def bmx_tunein_navigate(
+    encoded_uri: str = "",
+    subsection: int | None = None,
+) -> BmxNavResponse:
+    return tunein_navigate_v1(encoded_uri, subsection)
+
+
 @app.get(
     "/bmx/tunein/v1/navigate/profiles/{profile_type}/{program_id}/{encoded_uri}",
     response_model_exclude_none=True,
     tags=["bmx"],
 )
-def bmx_tunein_navigate(
+def bmx_tunein_navigate_profile(
     encoded_uri: str = "",
-    subsection: int | None = None,
     profile_type: str | None = None,
     program_id: str | None = None,
 ) -> BmxNavResponse:
     # the profile_type and program_id i think can be ignored in favor of the encoded_uri?
-    return tunein_navigate_v1(encoded_uri, subsection)
+    return tunein_navigate_profile_v1(encoded_uri)
 
 
 @app.get(

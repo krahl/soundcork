@@ -1,14 +1,14 @@
 import logging
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from os import path, walk
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
 
 from soundcork.config import Settings
-from soundcork.constants import PROVIDERS
-from soundcork.devices import get_device_by_id, read_device_info
+from soundcork.constants import DEFAULT_DATESTR, PROVIDERS
+from soundcork.devices import get_device_by_id, hostname_for_device, read_device_info
 from soundcork.model import (
     ConfiguredSource,
     ContentItem,
@@ -16,6 +16,7 @@ from soundcork.model import (
     Recent,
     SourceProvider,
 )
+from soundcork.utils import strip_element_text
 
 if TYPE_CHECKING:
     from soundcork.datastore import DataStore
@@ -31,14 +32,11 @@ logger = logging.getLogger(__name__)
 
 settings = Settings()
 
-# used for when a timestamp is missing
-default_datestr = "2012-09-19T12:43:00.000+00:00"
-
 
 def source_providers() -> list[SourceProvider]:
     return [
         SourceProvider(
-            id=i[0], created_on=default_datestr, name=i[1], updated_on=default_datestr
+            id=i[0], created_on=DEFAULT_DATESTR, name=i[1], updated_on=DEFAULT_DATESTR
         )
         for i in enumerate(PROVIDERS, start=1)
     ]
@@ -49,18 +47,14 @@ def preset_xml(preset: Preset, conf_sources_list: list[ConfiguredSource]) -> ET.
     preset_element.attrib["buttonNumber"] = preset.id
 
     try:
-        created_on = datetime.fromtimestamp(
-            int(preset.created_on), timezone.utc
-        ).isoformat()
+        created_on = datetime.fromtimestamp(int(preset.created_on), timezone.utc).isoformat()  # type: ignore
     except:
-        created_on = default_datestr
+        created_on = DEFAULT_DATESTR
 
     try:
-        updated_on = datetime.fromtimestamp(
-            int(preset.updated_on), timezone.utc
-        ).isoformat()
+        updated_on = datetime.fromtimestamp(int(preset.updated_on), timezone.utc).isoformat()  # type: ignore
     except:
-        updated_on = default_datestr
+        updated_on = DEFAULT_DATESTR
 
     ET.SubElement(preset_element, "containerArt").text = preset.container_art
     ET.SubElement(preset_element, "contentItemType").text = preset.type
@@ -72,7 +66,7 @@ def preset_xml(preset: Preset, conf_sources_list: list[ConfiguredSource]) -> ET.
     return preset_element
 
 
-def presets_xml(datastore: "DataStore", account: str, device: str) -> ET.Element:
+def presets_xml(datastore: "DataStore", account: str, device: str = "") -> ET.Element:
     conf_sources_list = datastore.get_configured_sources(account, device)
 
     presets_list = datastore.get_presets(account, device)
@@ -130,12 +124,47 @@ def update_preset(
         container_art=container_art,
     )
 
-    presets_list[preset_number - 1] = preset_obj
+    preset_number_str = str(preset_number)
+    matching_preset = None
+    for preset in presets_list:
+        if preset.id == preset_number_str:
+            matching_preset = preset
+            break
+
+    if matching_preset:
+        presets_list.remove(matching_preset)
+
+    presets_list.append(preset_obj)
 
     datastore.save_presets(account, device, presets_list)
 
     preset_element = preset_xml(preset_obj, conf_sources_list)
     return preset_element
+
+
+def delete_preset(
+    datastore: "DataStore",
+    account: str,
+    device: str,
+    preset_number: int,
+) -> bool:
+    presets_list = datastore.get_presets(account, device)
+
+    preset_number_str = str(preset_number)
+    matching_preset = None
+    for preset in presets_list:
+        if preset.id == preset_number_str:
+            matching_preset = preset
+            break
+
+    if not matching_preset:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Preset not found")
+
+    presets_list.remove(matching_preset)
+
+    datastore.save_presets(account, device, presets_list)
+
+    return True
 
 
 def content_item_source_xml(
@@ -186,7 +215,9 @@ def configured_source_xml(conf_source: ConfiguredSource) -> ET.Element:
     source = ET.Element("source")
     source.attrib["id"] = conf_source.id
     source.attrib["type"] = "Audio"
-    ET.SubElement(source, "createdOn").text = default_datestr
+    ET.SubElement(source, "createdOn").text = (
+        conf_source.created_on if conf_source.created_on else DEFAULT_DATESTR
+    )
     credential = ET.SubElement(source, "credential")
     credential.text = conf_source.secret
     credential.attrib["type"] = "token"
@@ -195,8 +226,10 @@ def configured_source_xml(conf_source: ConfiguredSource) -> ET.Element:
         PROVIDERS.index(conf_source.source_key_type) + 1
     )
     ET.SubElement(source, "sourcename").text = conf_source.display_name
-    ET.SubElement(source, "sourcesettings")
-    ET.SubElement(source, "updatedOn").text = default_datestr
+    ET.SubElement(source, "sourceSettings")
+    ET.SubElement(source, "updatedOn").text = (
+        conf_source.updated_on if conf_source.updated_on else DEFAULT_DATESTR
+    )
     ET.SubElement(source, "username").text = conf_source.source_key_account
 
     return source
@@ -214,11 +247,9 @@ def recents_xml(datastore: "DataStore", account: str, device: str) -> ET.Element
         ).isoformat()
 
         try:
-            created_on = datetime.fromtimestamp(
-                int(recent.created_on), timezone.utc
-            ).isoformat()
+            created_on = datetime.fromtimestamp(int(recent.created_on), timezone.utc).isoformat()  # type: ignore
         except:
-            created_on = default_datestr
+            created_on = DEFAULT_DATESTR
 
         recent_element = ET.SubElement(recents_element, "recent")
         recent_element.attrib["id"] = recent.id
@@ -252,9 +283,9 @@ def add_recent(
     # these values are all assumed to be required for this to be
     # a valid Recent XML source; if any of these are not present
     # they should produce an exception
-    name = new_recent_elem.find("name").text
-    source_id = new_recent_elem.find("sourceid").text
-    location = new_recent_elem.find("location").text
+    name = new_recent_elem.find("name").text  # type: ignore
+    source_id = new_recent_elem.find("sourceid").text  # type: ignore
+    location = new_recent_elem.find("location").text  # type: ignore
     is_presetable = "true"
 
     type = strip_element_text(new_recent_elem.find("contentItemType"))
@@ -281,7 +312,7 @@ def add_recent(
     if matching_recent:
         # just update the time and move it to the front of the list
         matching_recent.utc_time = str(utc_time)
-        created_on = default_datestr
+        created_on = DEFAULT_DATESTR
         recent_obj = matching_recent
     else:
         # need a new id
@@ -289,14 +320,14 @@ def add_recent(
         # would probably have the second clobber the first
         next_id = max(int(recent.id) for recent in recents_list) + 1
         recent_obj = Recent(
-            name=name,  # type:ignore
+            name=name,  # type: ignore
             utc_time=str(utc_time),
             id=str(next_id),
             source_id=source_id,
             source=source,
             device_id=device_id,
-            type=type,  # type:ignore
-            location=location,  # type:ignore
+            type=type,  # type: ignore
+            location=location,  # type: ignore
             source_account=source_account,
             is_presetable=is_presetable,
         )
@@ -329,26 +360,45 @@ def add_recent(
     return recent_element
 
 
-def provider_settings_xml(account: str) -> ET.Element:
+def provider_settings_xml(account: str, provider_id: str = "") -> ET.Element:
     # this seems to report information like if you're eligible for a free
     # trial
-    provider_settings = ET.Element("providerSettings")
-    p_setting = ET.SubElement(provider_settings, "providerSetting")
-    ET.SubElement(p_setting, "boseId").text = account
-    ET.SubElement(p_setting, "keyName").text = "ELIGIBLE_FOR_TRIAL"
-    ET.SubElement(p_setting, "value").text = "true"
-    ET.SubElement(p_setting, "providerId").text = "14"
-    return provider_settings
+    if provider_id:
+        eligibilty = ET.Element("providerSettings")
+        ET.SubElement(eligibilty, "isEligible").text = "false"
+        return eligibilty
+    else:
+        provider_settings = ET.Element("providerSettings")
+        p_setting = ET.SubElement(provider_settings, "providerSetting")
+        ET.SubElement(p_setting, "boseId").text = account
+        ET.SubElement(p_setting, "keyName").text = "ELIGIBLE_FOR_TRIAL"
+        ET.SubElement(p_setting, "value").text = "true"
+        ET.SubElement(p_setting, "providerId").text = "14"
+        return provider_settings
 
 
 def account_full_xml(account: str, datastore: "DataStore") -> ET.Element:
     account_elem = ET.Element("account")
     account_elem.attrib["id"] = account
     ET.SubElement(account_elem, "accountStatus").text = "OK"
-    devices_elem = ET.SubElement(account_elem, "devices")
-    last_device_id = ""
+    account_elem.append(account_devices_xml(account, datastore))
+
+    ET.SubElement(account_elem, "mode").text = "global"
+
+    # FIXME we can get this from the language endpoint but it returns a
+    # number rather than a language code
+    ET.SubElement(account_elem, "preferredLanguage").text = "en"
+    account_elem.append(provider_settings_xml(account))
+    account_elem.append(all_sources_xml(datastore.get_configured_sources(account)))
+
+    return account_elem
+
+
+def account_devices_xml(account: str, datastore: "DataStore") -> ET.Element:
+    devices_elem = ET.Element("devices")
     for device_id in datastore.list_devices(account):
-        last_device_id = device_id
+        if not device_id:
+            continue
         device_info = datastore.get_device_info(account, device_id)
 
         device_elem = ET.SubElement(devices_elem, "device")
@@ -363,7 +413,7 @@ def account_full_xml(account: str, datastore: "DataStore") -> ET.Element:
         ET.SubElement(attached_product_elem, "serialnumber").text = (
             device_info.product_serial_number
         )
-        ET.SubElement(device_elem, "createdOn").text = default_datestr
+        ET.SubElement(device_elem, "createdOn").text = device_info.created_on
 
         ET.SubElement(device_elem, "firmwareVersion").text = (
             device_info.firmware_version
@@ -375,19 +425,12 @@ def account_full_xml(account: str, datastore: "DataStore") -> ET.Element:
         ET.SubElement(device_elem, "serialnumber").text = (
             device_info.device_serial_number
         )
-        ET.SubElement(device_elem, "updatedOn").text = default_datestr
+        ET.SubElement(device_elem, "updatedOn").text = device_info.updated_on
+    return devices_elem
 
-    ET.SubElement(account_elem, "mode").text = "global"
 
-    # FIXME we can get this from the language endpoint but it returns a
-    # number rather than a language code
-    ET.SubElement(account_elem, "preferredLanguage").text = "en"
-    account_elem.append(provider_settings_xml(account))
-    account_elem.append(
-        all_sources_xml(datastore.get_configured_sources(account, last_device_id))
-    )
-
-    return account_elem
+def account_sources_xml(account: str, datastore: "DataStore") -> ET.Element:
+    return all_sources_xml(datastore.get_configured_sources(account))
 
 
 def software_update_xml() -> ET.Element:
@@ -400,15 +443,32 @@ def software_update_xml() -> ET.Element:
 
 def add_device_to_account(
     datastore: "DataStore", account: str, source_xml: str
-) -> ET.Element:
+) -> tuple[str, ET.Element]:
 
     new_device_elem = ET.fromstring(source_xml)
     device_id = new_device_elem.attrib.get("deviceid", "")
-    name = new_device_elem.find("name").text
-    device = get_device_by_id(device_id)
-    device_xml = read_device_info(device)
-    datastore.add_device(account, device_id, device_xml)
+    # Name is required and should raise an exception if missing
+    name = strip_element_text(new_device_elem.find("name"))
+    if not name:
+        raise RuntimeError("device requires a name")
 
+    # first see if this device is already defined
+    existing_device, current_account = datastore.find_device(device_id)
+    if existing_device:
+        if current_account:
+            datastore.remove_device(current_account, device_id)
+        existing_device.name = name
+        datastore.add_device(account, device_id, existing_device)
+    else:
+        device = get_device_by_id(device_id)
+        if not device:
+            raise RuntimeError(f"Unknown device {device_id}")
+
+        device_xml = read_device_info(hostname_for_device(device))
+        device_elem = ET.fromstring(device_xml)
+        datastore.add_device(
+            account, device_id, datastore.device_info_from_device_info_xml(device_elem)
+        )
     created_on = datetime.fromtimestamp(
         datetime.now().timestamp(), timezone.utc
     ).isoformat()
@@ -423,16 +483,118 @@ def add_device_to_account(
     return (device_id, return_elem)
 
 
+def rename_device(
+    datastore: "DataStore", account: str, device_id: str, source_xml: str
+) -> ET.Element:
+
+    new_device_elem = ET.fromstring(source_xml)
+    # Name is required and should raise an exception if missing
+    name = strip_element_text(new_device_elem.find("name"))
+    if not name:
+        raise RuntimeError("device requires a name")
+
+    # first see if this device is already defined
+    existing_device = datastore.get_device_info(account, device_id)
+    existing_device.name = name
+    updated_device = datastore.save_device_info(existing_device, account)
+
+    return_elem = ET.Element("device")
+    return_elem.attrib["deviceid"] = updated_device.device_id
+    ET.SubElement(return_elem, "createdOn").text = updated_device.created_on
+    ET.SubElement(return_elem, "ipaddress").text = updated_device.ip_address
+    ET.SubElement(return_elem, "name").text = updated_device.name
+    ET.SubElement(return_elem, "updatedOn").text = updated_device.updated_on
+
+    return return_elem
+
+
 def remove_device_from_account(datastore: "DataStore", account: str, device: str):
     removed = datastore.remove_device(account, device)
     return {"ok": removed}
 
-def strip_element_text(elem: ET.Element) -> str:
-    if elem == None:
-        return ""
+
+# updates the poweron data for the device represented by the
+# poweron_xml xml. if the device is part of an account, also checks
+# to see if the ip address needs to be updated, and if so, updates it.
+def update_device_poweron(datastore: "DataStore", poweron_xml: bytes) -> str | None:
+    poweron_elem = ET.fromstring(poweron_xml)
+    device = datastore.device_info_from_poweron_xml(poweron_elem)
+    current_device, account_id = datastore.find_device(device.device_id)
+    if current_device and account_id:
+        if current_device.ip_address != device.ip_address:
+            current_device.ip_address = device.ip_address
+            datastore.save_device_info(current_device, account_id)
+    datastore.save_poweron(device.device_id, poweron_xml.decode())
+    return account_id
+
+
+def get_device_group_xml(
+    datastore: "DataStore", account: str, device_id: str
+) -> ET.Element:
+    """
+    check group status of a device
+    return value::
+    - XML <group/> if ungrouped
+    - XML file of group if grouped
+    - error if device does not exist or is no ST10
+    """
+    group = datastore.group_for_device(account, device_id)
+    if group:
+        return datastore.group_to_xml(group)
     else:
-        text = elem.text
-        if not text:
-            return ""
+        return ET.Element("groups")
+
+
+def add_group(datastore: "DataStore", account: str, group_info_xml: str) -> ET.Element:
+    group_elem = ET.fromstring(group_info_xml)
+    group = datastore.group_from_xml("", group_elem)
+    return datastore.add_group(account, group)
+
+
+def modify_group(
+    datastore: "DataStore", account: str, group_id: str, group_info_xml: str
+) -> ET.Element:
+    group_elem = ET.fromstring(group_info_xml)
+    name = strip_element_text(group_elem.find("name"))
+    master_id = strip_element_text(group_elem.find("masterDeviceId"))
+    group = datastore.get_group(account, group_id)
+    if group:
+        if group.master_id == master_id:
+            group.name = name
+            return datastore.save_group(account, group_id, group)
         else:
-            return text.strip()
+            raise HTTPException(
+                HTTPStatus.BAD_REQUEST,
+                f"masterDeviceId {master_id} does not match group master",
+            )
+    else:
+        raise HTTPException(HTTPStatus.BAD_REQUEST, f"No such group {group_id}")
+
+
+def add_source_to_account(datastore: "DataStore", account: str, xml: str) -> ET.Element:
+    source_elem = ET.fromstring(xml)
+    credential = strip_element_text(source_elem.find("credential"))
+    username = strip_element_text(source_elem.find("username"))
+    source_provider_id = strip_element_text(source_elem.find("sourceproviderid"))
+    source_key_type = PROVIDERS[int(source_provider_id) - 1]
+    source_name = strip_element_text(source_elem.find("sourcename"))
+    # if we see something that uses a secret type other than 'token' then we'll learn
+    # how that's set
+    secret_type = "token"
+
+    new_source = ConfiguredSource(
+        id="",
+        display_name=source_name,
+        secret=credential,
+        secret_type=secret_type,
+        source_key_account=username,
+        source_key_type=source_key_type,
+        created_on="",
+        updated_on="",
+    )
+    updated_source = datastore.add_source(account, new_source)
+    return configured_source_xml(updated_source)
+
+
+def remove_source_from_account(datastore: "DataStore", account: str, source_id: str):
+    return datastore.remove_source(account, source_id)

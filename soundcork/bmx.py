@@ -435,16 +435,6 @@ def tunein_sections_jsonapi(
     else:
         subsection_part = ""  # if add_subsection:
 
-    # section_self_link = f"/v1/navigate/{subsection_part}{base64.urlsafe_b64encode(tunein_uri.encode()).decode()}"
-    # logger.info(f"items={items}")
-    # sections.append(
-    #    BmxNavSection(
-    #        links={"self": {"href": section_self_link}},
-    #        items=sections,
-    #        layout=layout,
-    #        name=content_json.get("Header", {}).get("Title", "Title"),
-    #    )
-    # )
     return sections
 
 

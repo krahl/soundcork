@@ -659,9 +659,18 @@ def bmx_playback_podcast(episode_id: str, request: Request) -> BmxPlaybackRespon
     response_model_exclude_none=True,
     tags=["bmx"],
 )
+@app.get(
+    "/bmx/tunein/v1/navigate/profiles/{profile_type}/{program_id}/{encoded_uri}",
+    response_model_exclude_none=True,
+    tags=["bmx"],
+)
 def bmx_tunein_navigate(
-    encoded_uri: str = "", subsection: int | None = None
+    encoded_uri: str = "",
+    subsection: int | None = None,
+    profile_type: str | None = None,
+    program_id: str | None = None,
 ) -> BmxNavResponse:
+    # the profile_type and program_id i think can be ignored in favor of the encoded_uri?
     return tunein_navigate_v1(encoded_uri, subsection)
 
 

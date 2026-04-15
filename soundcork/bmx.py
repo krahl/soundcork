@@ -270,7 +270,6 @@ def tunein_navigate_v1(
             "templated": True,
         }
 
-    logger.info(f"tunein_uri={tunein_uri}")
     if tunein_uri.startswith(TUNEIN_NAVIGATE_ASHX):
         # this builds all of the sections for ashx
         sections = tunein_sections_ashx(tunein_uri, subsection)
@@ -430,14 +429,14 @@ def tunein_sections_jsonapi(
     items = content_json["Items"]
 
     for idx, item in enumerate(items):
-        logger.info(
+        logger.debug(
             f"Type={item.get('Type', '')}, ContainerType={item.get('ContainerType', '')}"
         )
         if subsection is not None and subsection != idx:
             continue
 
         if item.get("Type", "") == "Container":
-            logger.info(f"creating section, Title = {item.get('Title', '')}")
+            logger.debug(f"creating section, Title = {item.get('Title', '')}")
             if item.get("ContainerType", "") != "NotPlayableStations":
                 sections.append(tunein_search_section(item, idx, ""))
         else:
@@ -492,11 +491,11 @@ def tunein_navigate_profile_v1(encoded_uri: str = "") -> BmxNavResponse:
     items = content_json["Items"]
 
     for idx, item in enumerate(items):
-        logger.info(
+        logger.debug(
             f"Type={item.get('Type', '')}, ContainerType={item.get('ContainerType', '')}"
         )
         if item.get("Type", "") == "Container":
-            logger.info(f"creating section, Title = {item.get('Title', '')}")
+            logger.debug(f"creating section, Title = {item.get('Title', '')}")
             if item.get("ContainerType", "") != "NotPlayableStations":
                 sections.append(tunein_search_section(item, idx, "", "list"))
         else:
@@ -528,11 +527,11 @@ def tunein_search_v1(query: str, subsection: str | None = None) -> BmxNavRespons
     items = content_json["Items"]
 
     for idx, item in enumerate(items):
-        logger.info(
+        logger.debug(
             f"Type={item.get('Type', '')}, ContainerType={item.get('ContainerType', '')}"
         )
         if item.get("Type", "") == "Container":
-            logger.info(f"creating section, Title = {item.get('Title', '')}")
+            logger.debug(f"creating section, Title = {item.get('Title', '')}")
             if item.get("ContainerType", "") != "NotPlayableStations":
                 sections.append(tunein_search_section(item, idx, query))
         else:
@@ -551,7 +550,6 @@ def tunein_search_v1(query: str, subsection: str | None = None) -> BmxNavRespons
 def tunein_search_section(
     item: dict, idx: int, query: str, layout: str = "shortList"
 ) -> BmxNavSection:
-    logger.info("creating container")
     pivot_url = item.get("Pivots", {}).get("More", {}).get("Url", "")
     encoded_query = base64.urlsafe_b64encode(
         f"{TUNEIN_SEARCH}{query}".encode()
@@ -591,7 +589,7 @@ def tunein_search_section(
             )
         else:
             logger.info(f"child is type {child.get('Type', '')}")
-    logger.info(f"creating bmxnavsection with name {item.get('Title', '')}")
+
     return BmxNavSection(
         links={"self": {"href": href}},
         items=section_items,
@@ -601,7 +599,6 @@ def tunein_search_section(
 
 
 def tunein_search_playitem(item: dict) -> BmxNavItem:
-    logger.info(f"creating station/playitem from {item}")
     href = f'/v1/playback/station/{item.get("GuideId", "")}'
     return BmxNavItem(
         links={
@@ -623,7 +620,6 @@ def tunein_search_playitem(item: dict) -> BmxNavItem:
 
 
 def tunein_search_topic(item: dict) -> BmxNavItem:
-    logger.info(f"creating topc from {item}")
     title = item.get("Title", "")
     encoded_name = base64.urlsafe_b64encode(title.encode()).decode()
     href = (

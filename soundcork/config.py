@@ -21,10 +21,6 @@ class Settings(BaseSettings):
     base_url: str = ""
     data_dir: str = ""
 
-    # Management API authentication
-    mgmt_username: str = "admin"
-    mgmt_password: str = "change_me!"
-
     # Spotify OAuth (optional — leave empty to disable)
     spotify_client_id: str = ""
     spotify_client_secret: str = ""

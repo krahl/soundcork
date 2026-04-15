@@ -7,6 +7,7 @@ All Spotify functionality is optional -- if SPOTIFY_CLIENT_ID is not
 configured, the management API gracefully disables Spotify endpoints.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -181,6 +182,13 @@ class SpotifyService:
             self._save_accounts(accounts)
 
         return account["accessToken"]
+
+    def get_fresh_token_sync(self) -> str:
+        return asyncio.run(self._get_valid_token())
+
+    def get_spotify_user_id(self) -> str:
+        accounts = self._load_accounts()
+        return accounts[0].get("id", "")
 
     async def _get_user_profile(self, access_token: str) -> dict:
         """Fetch the current user's Spotify profile."""

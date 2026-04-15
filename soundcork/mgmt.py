@@ -19,7 +19,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from soundcork.config import Settings
 from soundcork.datastore import DataStore
-from soundcork.mgmt_auth import verify_credentials
 from soundcork.spotify_service import SpotifyService
 
 logger = logging.getLogger(__name__)
@@ -31,66 +30,11 @@ settings = Settings()
 spotify = SpotifyService()
 
 
-# --- Speaker Management ---
-
-
-@router.get("/accounts/{account_id}/speakers")
-def list_speakers(
-    account_id: str,
-    _user: str = Depends(verify_credentials),
-):
-    """List all speakers for an account.
-
-    Returns IP addresses and basic info for each device.
-    """
-    try:
-        device_ids = datastore.list_devices(account_id)
-    except (StopIteration, FileNotFoundError):
-        raise HTTPException(status_code=404, detail="Account not found")
-
-    speakers = []
-    for device_id in device_ids:
-        try:
-            info = datastore.get_device_info(account_id, device_id)
-            speakers.append(
-                {
-                    "ipAddress": info.ip_address,
-                    "name": info.name,
-                    "deviceId": info.device_id,
-                    "type": info.product_code,
-                }
-            )
-        except Exception:
-            logger.warning("Failed to read device info for %s", device_id)
-            continue
-
-    return {"speakers": speakers}
-
-
-# --- Device Events ---
-
-
-@router.get("/devices/{device_id}/events")
-def list_device_events(
-    device_id: str,
-    _user: str = Depends(verify_credentials),
-):
-    """List events for a device.
-
-    Currently returns an empty list. Can be extended to log
-    power_on events, preset changes, etc.
-    """
-    return {"events": []}
-
-
 # --- Spotify ---
 
 
 @router.post("/spotify/init")
-def spotify_init(
-    request: Request,
-    _user: str = Depends(verify_credentials),
-):
+def spotify_init(request: Request):
     """Start the Spotify OAuth flow.
 
     Returns a redirect URL that the caller should open in a browser.
@@ -175,10 +119,7 @@ async def spotify_callback(
 
 
 @router.post("/spotify/confirm")
-async def spotify_confirm(
-    code: Annotated[str, Query()],
-    _user: str = Depends(verify_credentials),
-):
+async def spotify_confirm(code: Annotated[str, Query()]):
     """Confirm Spotify authorization with an authorization code.
 
     Used by mobile apps after a deep link callback delivers the code.
@@ -200,9 +141,7 @@ async def spotify_confirm(
 
 
 @router.get("/spotify/accounts")
-def spotify_accounts(
-    _user: str = Depends(verify_credentials),
-):
+def spotify_accounts():
     """List connected Spotify accounts (tokens stripped)."""
     accounts = spotify.list_accounts()
     return {
@@ -218,10 +157,7 @@ def spotify_accounts(
 
 
 @router.post("/spotify/entity")
-async def spotify_entity(
-    request: Request,
-    _user: str = Depends(verify_credentials),
-):
+async def spotify_entity(request: Request):
     """Resolve a Spotify URI to a name and image URL.
 
     Useful when storing Spotify presets -- resolves the track/album/

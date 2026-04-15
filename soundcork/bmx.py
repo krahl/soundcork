@@ -22,9 +22,19 @@ logger = logging.getLogger(__name__)
 # TODO: move into constants file eventually.
 TUNEIN_DESCRIBE = "https://opml.radiotime.com/describe.ashx?id=%s"
 TUNEIN_STREAM = "http://opml.radiotime.com/Tune.ashx?id=%s&formats=mp3,aac,ogg"
+# the top-level browse categories return well using the opml/ashx endpoints
 TUNEIN_NAVIGATE_ASHX = "http://opml.radiotime.com/?render=json"
-# TUNEIN_SEARCH = "https://api.radiotime.com/profiles?fulltextsearch=true&version=1.3&query="
-TUNEIN_SEARCH = "https://api.radiotime.com/profiles?fulltextsearch=true&version=1.3&serial=4e060500-d897-4b65-9c15-ae6c2d7a51e9&query="
+# search seems to work better using the api.radiotime.com endpoints.
+# bose servers seem to use api.radiotime.com for all requests, so if we want
+# to merge the two together we should try api.radiotime.com first.
+#
+# also for future reference: the bose servers include &serial={guid}, where the
+# guid is defined in the Source definition token for the tunein service. however,
+# in actual use including the token doesn't seem to make a different; maybe
+# this is used for tracking?
+TUNEIN_SEARCH = (
+    "https://api.radiotime.com/profiles?fulltextsearch=true&version=1.3&query="
+)
 
 
 # TODO:  determine how listen_id is used, if at all
@@ -262,11 +272,10 @@ def tunein_navigate_v1(
 
     logger.info(f"tunein_uri={tunein_uri}")
     if tunein_uri.startswith(TUNEIN_NAVIGATE_ASHX):
-        logger.info("runing ashx")
         # this builds all of the sections for ashx
         sections = tunein_sections_ashx(tunein_uri, subsection)
     else:
-        # build subsetions for api.radiotime.com
+        # build subsections for api.radiotime.com
         sections = tunein_sections_jsonapi(tunein_uri, subsection)
 
     # for the self link
@@ -408,6 +417,10 @@ def tunein_navigate_link(item: dict) -> BmxNavItem:
 def tunein_sections_jsonapi(
     tunein_uri: str, subsection: int | None = None
 ) -> list[BmxNavSection]:
+    """
+    this uses the api.radiotime.com api because it worked better for
+    search, and worked just fine for results returned by search.
+    """
     contents = urllib.request.urlopen(tunein_uri).read()
     content_str = contents.decode("utf-8")
     content_json = json.loads(content_str)

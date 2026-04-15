@@ -61,6 +61,7 @@ def preset_xml(preset: Preset, conf_sources_list: list[ConfiguredSource]) -> ET.
     ET.SubElement(preset_element, "createdOn").text = created_on
     ET.SubElement(preset_element, "location").text = preset.location
     ET.SubElement(preset_element, "name").text = preset.name
+    ET.SubElement(preset_element, "username").text = preset.name
     preset_element.append(content_item_source_xml(conf_sources_list, preset))
     ET.SubElement(preset_element, "updatedOn").text = updated_on
     return preset_element

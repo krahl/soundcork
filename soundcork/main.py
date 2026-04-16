@@ -74,19 +74,20 @@ settings = Settings()
 speakers = Speakers(datastore, settings)
 
 from soundcork.spotify_service import SpotifyService
-from soundcork.zeroconf_primer import ZeroConfPrimer
+
+# from soundcork.zeroconf_primer import ZeroConfPrimer
 
 spotify_service = SpotifyService()
-zeroconf_primer = ZeroConfPrimer(spotify_service, datastore, settings)
+# zeroconf_primer = ZeroConfPrimer(spotify_service, datastore, settings)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting up soundcork")
-    zeroconf_primer.start_periodic()
+    logger.info("Starting up soundcork -- skipping zeroconf configuration")
+    # zeroconf_primer.start_periodic()
     logger.info("done starting up server")
     yield
-    zeroconf_primer.stop_periodic()
+    # zeroconf_primer.stop_periodic()
     logger.debug("closing server")
 
 

@@ -364,8 +364,6 @@ class ZeroConfPrimer:
         logger.info(
             f"DEBUG:  trying to add user {user_id} to {speaker_ip} but not really"
         )
-        if speaker_ip:
-            return {}
 
         """Send addUser to the speaker's ZeroConf endpoint."""
         post_data = urllib.parse.urlencode(

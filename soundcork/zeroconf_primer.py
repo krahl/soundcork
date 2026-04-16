@@ -361,6 +361,12 @@ class ZeroConfPrimer:
 
     @staticmethod
     def _send_add_user(speaker_ip: str, user_id: str, token: str) -> dict:
+        logger.info(
+            f"DEBUG:  trying to add user {user_id} to {speaker_ip} but not really"
+        )
+        if speaker_ip:
+            return {}
+
         """Send addUser to the speaker's ZeroConf endpoint."""
         post_data = urllib.parse.urlencode(
             {

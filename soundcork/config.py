@@ -18,8 +18,15 @@ class Settings(BaseSettings):
 
     """
 
+    # base url for the soundcork server. this should be reachable by the speakers
     base_url: str = ""
+
+    # local directory where soundcork stores its data
     data_dir: str = ""
+
+    # (optional) local directory for soundcork to store detailed logs of 404 errors
+    #  used for development/debugging
+    unhandled_log_dir: str = ""
     model_config = SettingsConfigDict(
         # `.env.private` takes priority over `.env.shared`
         env_file=(".env.shared", ".env.private")

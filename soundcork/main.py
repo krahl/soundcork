@@ -149,8 +149,8 @@ async def register_speakers_middleware(request: Request, call_next):
         try:
             acc_idx = parts.index("account") + 1
             dev_idx = parts.index("device") + 1
-            if acc_idx < len(parts) and dev_idx < len(parts):
-                zeroconf_primer.register_speaker(parts[acc_idx], parts[dev_idx])
+        #    if acc_idx < len(parts) and dev_idx < len(parts):
+        #        zeroconf_primer.register_speaker(parts[acc_idx], parts[dev_idx])
         except (ValueError, IndexError):
             pass
 
@@ -178,7 +178,7 @@ async def power_on(request: Request, response: Response) -> Response:
         )
         # Prime speakers for Spotify after boot.  The primer handles
         # retry/backoff in a background thread so the response is fast.
-        zeroconf_primer.on_power_on(source_ip)
+        # zeroconf_primer.on_power_on(source_ip)
         response.status_code = HTTPStatus.OK
         return response
     else:

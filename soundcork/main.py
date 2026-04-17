@@ -75,22 +75,7 @@ speakers = Speakers(datastore, settings)
 
 from soundcork.spotify_service import SpotifyService
 
-# TODO:  move references to zeroconf_primer into the zeroconf_primer.py
-# file with instructions on how to re-enable them
-# from soundcork.zeroconf_primer import ZeroConfPrimer
-
 spotify_service = SpotifyService()
-# zeroconf_primer = ZeroConfPrimer(spotify_service, datastore, settings)
-
-
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#    logger.info("Starting up soundcork -- zeroconf configuration")
-#    zeroconf_primer.start_periodic()
-#    logger.info("done starting up server")
-#    yield
-#    zeroconf_primer.stop_periodic()
-#    logger.debug("closing server")
 
 
 description = """
@@ -118,7 +103,6 @@ app = FastAPI(
     summary="Emulates SoundTouch servers.",
     version="0.0.1",
     openapi_tags=tags_metadata,
-    #    lifespan=lifespan,
 )
 
 from soundcork.mgmt import router as mgmt_router
@@ -140,25 +124,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(mgmt_router)
 
 
-# @app.middleware("http")
-# async def register_speakers_middleware(request: Request, call_next):
-#    """Capture account/device IDs from marge URLs for the Spotify primer."""
-#    response = await call_next(request)
-#
-#    path = request.url.path
-#    if "/marge/" in path and "/account/" in path and "/device/" in path:
-#        parts = path.split("/")
-#        try:
-#            acc_idx = parts.index("account") + 1
-#            dev_idx = parts.index("device") + 1
-#            if acc_idx < len(parts) and dev_idx < len(parts):
-#                zeroconf_primer.register_speaker(parts[acc_idx], parts[dev_idx])
-#        except (ValueError, IndexError):
-#            pass
-#
-#    return response
-
-
 startup_timestamp = int(datetime.now().timestamp() * 1000)
 
 
@@ -178,9 +143,6 @@ async def power_on(request: Request, response: Response) -> Response:
         source_ip = (
             request.headers.get("x-forwarded-for", "").split(",")[0].strip() or None
         )
-        # Prime speakers for Spotify after boot.  The primer handles
-        # retry/backoff in a background thread so the response is fast.
-        # zeroconf_primer.on_power_on(source_ip)
         response.status_code = HTTPStatus.OK
         return response
     else:

@@ -9,6 +9,11 @@ Spotify endpoints are only available when SPOTIFY_CLIENT_ID and
 SPOTIFY_CLIENT_SECRET are configured.
 """
 
+# TODO:  move functionality into /admin section
+# TODO:  move oauth application configuration (client_id and client_secret)
+#        out of Settings and into a per-account configuration that can
+#        be modified from the admin UI
+
 import logging
 from typing import Annotated
 

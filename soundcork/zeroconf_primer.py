@@ -1,3 +1,9 @@
+"""This is feature is currently disabled because all the spotify
+functionality is available just through the oauth endpoint.
+Keeping this implementation for reference in case some deficiency
+is found in the oauth endpoint implementation during user testing.
+"""
+
 """Spotify ZeroConf primer for SoundTouch speakers.
 
 After Bose's cloud servers shut down, speakers can no longer obtain

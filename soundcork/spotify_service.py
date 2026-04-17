@@ -30,6 +30,14 @@ SPOTIFY_API_BASE = "https://api.spotify.com/v1"
 # control playback via the Spotify Web API.
 SPOTIFY_SCOPES = "user-read-private user-read-email"
 
+# full set of permissions that bose returned; included in case they're
+# needed in the future (like for browse)
+SPOTIFY_SCOPES_FULL = (
+    "streaming user-read-email user-read-private playlist-read-private"
+    " playlist-read-collaborative user-library-read user-read-playback-state"
+    " user-modify-playback-state user-read-currently-playing user-read-recently-played"
+)
+
 
 class SpotifyService:
     def __init__(self):
@@ -168,10 +176,6 @@ class SpotifyService:
 
         account = accounts[0]
         now = int(time.time())
-
-        logger.info(
-            f"checking for token, now={now}, expiresat={account.get('tokenExpiresAt')}"
-        )
 
         if now >= account.get("tokenExpiresAt", 0) - 60:
             refresh_token = account.get("refreshToken", "")

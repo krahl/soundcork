@@ -75,20 +75,22 @@ speakers = Speakers(datastore, settings)
 
 from soundcork.spotify_service import SpotifyService
 
+# TODO:  move references to zeroconf_primer into the zeroconf_primer.py
+# file with instructions on how to re-enable them
 # from soundcork.zeroconf_primer import ZeroConfPrimer
 
 spotify_service = SpotifyService()
 # zeroconf_primer = ZeroConfPrimer(spotify_service, datastore, settings)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("Starting up soundcork -- skipping zeroconf configuration")
-    # zeroconf_primer.start_periodic()
-    logger.info("done starting up server")
-    yield
-    # zeroconf_primer.stop_periodic()
-    logger.debug("closing server")
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#    logger.info("Starting up soundcork -- zeroconf configuration")
+#    zeroconf_primer.start_periodic()
+#    logger.info("done starting up server")
+#    yield
+#    zeroconf_primer.stop_periodic()
+#    logger.debug("closing server")
 
 
 description = """
@@ -116,7 +118,7 @@ app = FastAPI(
     summary="Emulates SoundTouch servers.",
     version="0.0.1",
     openapi_tags=tags_metadata,
-    lifespan=lifespan,
+    #    lifespan=lifespan,
 )
 
 from soundcork.mgmt import router as mgmt_router
@@ -138,23 +140,23 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(mgmt_router)
 
 
-@app.middleware("http")
-async def register_speakers_middleware(request: Request, call_next):
-    """Capture account/device IDs from marge URLs for the Spotify primer."""
-    response = await call_next(request)
-
-    path = request.url.path
-    if "/marge/" in path and "/account/" in path and "/device/" in path:
-        parts = path.split("/")
-        try:
-            acc_idx = parts.index("account") + 1
-            dev_idx = parts.index("device") + 1
-        #    if acc_idx < len(parts) and dev_idx < len(parts):
-        #        zeroconf_primer.register_speaker(parts[acc_idx], parts[dev_idx])
-        except (ValueError, IndexError):
-            pass
-
-    return response
+# @app.middleware("http")
+# async def register_speakers_middleware(request: Request, call_next):
+#    """Capture account/device IDs from marge URLs for the Spotify primer."""
+#    response = await call_next(request)
+#
+#    path = request.url.path
+#    if "/marge/" in path and "/account/" in path and "/device/" in path:
+#        parts = path.split("/")
+#        try:
+#            acc_idx = parts.index("account") + 1
+#            dev_idx = parts.index("device") + 1
+#            if acc_idx < len(parts) and dev_idx < len(parts):
+#                zeroconf_primer.register_speaker(parts[acc_idx], parts[dev_idx])
+#        except (ValueError, IndexError):
+#            pass
+#
+#    return response
 
 
 startup_timestamp = int(datetime.now().timestamp() * 1000)
@@ -206,6 +208,8 @@ def oauth_token_refresh(device_id: str, provider_id: str, token_type: str):
 
     Only handles provider 15 (Spotify).  Other providers return 404.
     """
+    # TODO:  modify to return amazon token also
+
     if provider_id != "15":
         logger.info(
             "OAuth token request for unsupported provider %s (device=%s)",
@@ -214,8 +218,9 @@ def oauth_token_refresh(device_id: str, provider_id: str, token_type: str):
         )
         return Response(status_code=404)
 
-    token = spotify_service.get_fresh_token_sync()
-    if not token:
+    # TODO:  use device to determine account, then get by account
+    token_dict = spotify_service.get_fresh_token_sync()
+    if not token_dict:
         logger.warning(
             "OAuth token refresh failed — no Spotify token available (device=%s)",
             device_id,
@@ -229,14 +234,7 @@ def oauth_token_refresh(device_id: str, provider_id: str, token_type: str):
         )
 
     logger.info("OAuth token refresh for device %s (provider=Spotify)", device_id)
-    return JSONResponse(
-        content={
-            "access_token": token,
-            "token_type": "Bearer",
-            "expires_in": 3600,
-            "scope": "streaming user-read-email user-read-private playlist-read-private playlist-read-collaborative user-library-read user-read-playback-state user-modify-playback-state user-read-currently-playing user-read-recently-played",
-        }
-    )
+    return JSONResponse(content=token_dict)
 
 
 @app.get("/marge/streaming/sourceproviders", tags=["marge"])

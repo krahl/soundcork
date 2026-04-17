@@ -211,7 +211,9 @@ class ZeroConfPrimer:
         if self._cached_token and now < self._token_expires_at - 120:
             return self._cached_token, user_id
 
-        token = self._spotify.get_fresh_token_sync()
+        token_dict = self._spotify.get_fresh_token_sync()
+        token = token_dict.get("access_token", "")
+
         if not token:
             logger.warning("Could not get Spotify access token")
             return None

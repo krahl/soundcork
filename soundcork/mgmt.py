@@ -4,8 +4,6 @@ These endpoints are NOT part of the Bose SoundTouch protocol. They
 provide a JSON API for managing soundcork configuration, listing
 speakers, and optionally linking Spotify accounts.
 
-All endpoints require HTTP Basic Auth (configured via MGMT_USERNAME
-and MGMT_PASSWORD environment variables).
 
 Spotify endpoints are only available when SPOTIFY_CLIENT_ID and
 SPOTIFY_CLIENT_SECRET are configured.

@@ -160,7 +160,7 @@ class SpotifyService:
 
         return response.json()
 
-    async def _get_valid_token(self) -> str:
+    async def _get_valid_token(self) -> dict:
         """Get a valid access token, refreshing if necessary."""
         accounts = self._load_accounts()
         if not accounts:
@@ -168,6 +168,10 @@ class SpotifyService:
 
         account = accounts[0]
         now = int(time.time())
+
+        logger.info(
+            f"checking for token, now={now}, expiresat={account.get('tokenExpiresAt')}"
+        )
 
         if now >= account.get("tokenExpiresAt", 0) - 60:
             refresh_token = account.get("refreshToken", "")
@@ -181,9 +185,14 @@ class SpotifyService:
                 account["refreshToken"] = token_data["refresh_token"]
             self._save_accounts(accounts)
 
-        return account["accessToken"]
+        return {
+            "access_token": account["accessToken"],
+            "token_type": "Bearer",
+            "expires_in": account["tokenExpiresAt"] - now,
+            "scope": SPOTIFY_SCOPES,
+        }
 
-    def get_fresh_token_sync(self) -> str:
+    def get_fresh_token_sync(self) -> dict:
         return asyncio.run(self._get_valid_token())
 
     def get_spotify_user_id(self) -> str:
@@ -225,7 +234,8 @@ class SpotifyService:
             raise ValueError(f"Unsupported Spotify entity type: {entity_type}")
 
         api_type = entity_type + "s"
-        access_token = await self._get_valid_token()
+        token_dict = await self._get_valid_token()
+        access_token = token_dict.get("access_token", "")
 
         async with httpx.AsyncClient() as client:
             response = await client.get(

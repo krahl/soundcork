@@ -80,10 +80,6 @@ class NotFoundHandler:
         self, log_dir: Path, prefix: str, request: Request, body: bytes
     ) -> tuple[Path, Path]:
         headers = dict(request.headers)
-        # mask sensible data
-        for k in ("authorization", "cookie"):
-            if k in headers:
-                headers[k] = "***masked***"
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         ip = request.client.host if request.client else "unknown"

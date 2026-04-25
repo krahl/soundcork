@@ -37,6 +37,34 @@ TUNEIN_SEARCH = (
 )
 
 
+def tunein_is_opml_uri(tunein_uri: str) -> bool:
+    parsed_uri = urllib.parse.urlsplit(tunein_uri)
+    return parsed_uri.netloc.lower() == "opml.radiotime.com"
+
+
+def tunein_search_uri(query: str) -> str:
+    return f"{TUNEIN_SEARCH}{urllib.parse.quote_plus(query)}"
+
+
+def tunein_render_json_uri(tunein_uri: str) -> str:
+    if not tunein_uri:
+        return ""
+
+    parsed_uri = urllib.parse.urlsplit(tunein_uri)
+    query_params = [
+        (key, value)
+        for key, value in urllib.parse.parse_qsl(
+            parsed_uri.query, keep_blank_values=True
+        )
+        if key.lower() != "render"
+    ]
+    query_params.append(("render", "json"))
+
+    return urllib.parse.urlunsplit(
+        parsed_uri._replace(query=urllib.parse.urlencode(query_params))
+    )
+
+
 # TODO:  determine how listen_id is used, if at all
 # TODO:  determine how stream_id is used, if at all
 # TODO:  see if there is a value to varying the timeout values
@@ -270,7 +298,7 @@ def tunein_navigate_v1(
             "templated": True,
         }
 
-    if tunein_uri.startswith(TUNEIN_NAVIGATE_ASHX):
+    if tunein_is_opml_uri(tunein_uri):
         # this builds all of the sections for ashx
         sections = tunein_sections_ashx(tunein_uri, subsection)
     else:
@@ -399,7 +427,7 @@ def tunein_navigate_playitem(item: dict) -> BmxNavItem:
 
 
 def tunein_navigate_link(item: dict) -> BmxNavItem:
-    url = f'{item.get("URL", "")}&render=json'
+    url = tunein_render_json_uri(item.get("URL", ""))
     enc_url = base64.urlsafe_b64encode(url.encode()).decode()
     return BmxNavItem(
         links={
@@ -440,7 +468,7 @@ def tunein_sections_jsonapi(
             if item.get("ContainerType", "") != "NotPlayableStations":
                 sections.append(tunein_search_section(item, idx, ""))
         else:
-            logger.info(f"top-level nav not a container: {item.type}")
+            logger.info(f"top-level nav not a container: {item.get('Type', '')}")
 
     if subsection is not None:
         subsection_part = f"sub/{subsection}/"
@@ -513,7 +541,7 @@ def tunein_navigate_profile_v1(encoded_uri: str = "") -> BmxNavResponse:
 
 def tunein_search_v1(query: str, subsection: str | None = None) -> BmxNavResponse:
 
-    tunein_uri = f"{TUNEIN_SEARCH}{query}"
+    tunein_uri = tunein_search_uri(query)
     bmx_search_link = {
         "filters": [],
         "href": "/v1/search?q={query}",
@@ -535,10 +563,10 @@ def tunein_search_v1(query: str, subsection: str | None = None) -> BmxNavRespons
             if item.get("ContainerType", "") != "NotPlayableStations":
                 sections.append(tunein_search_section(item, idx, query))
         else:
-            logger.info(f"top-level search not a container: {item.type}")
+            logger.info(f"top-level search not a container: {item.get('Type', '')}")
 
     links = {
-        "self": {"href": f"/v1/search/q={query}"},
+        "self": {"href": f"/v1/search?{urllib.parse.urlencode({'q': query})}"},
     }
     return BmxNavResponse(
         links=links,
@@ -551,9 +579,7 @@ def tunein_search_section(
     item: dict, idx: int, query: str, layout: str = "shortList"
 ) -> BmxNavSection:
     pivot_url = item.get("Pivots", {}).get("More", {}).get("Url", "")
-    encoded_query = base64.urlsafe_b64encode(
-        f"{TUNEIN_SEARCH}{query}".encode()
-    ).decode()
+    encoded_query = base64.urlsafe_b64encode(tunein_search_uri(query).encode()).decode()
     if pivot_url:
         href = f"/v1/navigate/{base64.urlsafe_b64encode(pivot_url.encode()).decode()}"
     else:
@@ -667,7 +693,7 @@ def tunein_search_profile(item: dict, name: str) -> BmxNavItem:
 
 
 def tunein_search_link(item: dict) -> BmxNavItem:
-    url = f'{item.get("URL", "")}&render=json'
+    url = tunein_render_json_uri(item.get("URL", ""))
     enc_url = base64.urlsafe_b64encode(url.encode()).decode()
     return BmxNavItem(
         links={

@@ -403,7 +403,7 @@ def test_get_presets_parses_xml_from_mocked_parse(
     monkeypatch.setattr("soundcork.datastore.ET.parse", lambda _: ET.ElementTree(xml))
     monkeypatch.setattr("soundcork.datastore.path.exists", lambda _: True)
 
-    loaded = datastore.get_presets("12345", sample_device.device_id)
+    loaded = datastore.get_presets("12345")
 
     assert len(loaded) == 2
     assert loaded[0].name == "A"

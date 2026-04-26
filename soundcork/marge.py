@@ -61,6 +61,7 @@ def preset_xml(preset: Preset, conf_sources_list: list[ConfiguredSource]) -> ET.
     ET.SubElement(preset_element, "createdOn").text = created_on
     ET.SubElement(preset_element, "location").text = preset.location
     ET.SubElement(preset_element, "name").text = preset.name
+    ET.SubElement(preset_element, "username").text = preset.name
     preset_element.append(content_item_source_xml(conf_sources_list, preset))
     ET.SubElement(preset_element, "updatedOn").text = updated_on
     return preset_element
@@ -69,7 +70,7 @@ def preset_xml(preset: Preset, conf_sources_list: list[ConfiguredSource]) -> ET.
 def presets_xml(datastore: "DataStore", account: str, device: str = "") -> ET.Element:
     conf_sources_list = datastore.get_configured_sources(account, device)
 
-    presets_list = datastore.get_presets(account, device)
+    presets_list = datastore.get_presets(account)
 
     presets_element = ET.Element("presets")
     for preset in presets_list:
@@ -87,7 +88,7 @@ def update_preset(
     source_xml: bytes,
 ) -> ET.Element:
     conf_sources_list = datastore.get_configured_sources(account, device)
-    presets_list = datastore.get_presets(account, device)
+    presets_list = datastore.get_presets(account)
 
     new_preset_elem = ET.fromstring(source_xml)
 
@@ -148,7 +149,7 @@ def delete_preset(
     device: str,
     preset_number: int,
 ) -> bool:
-    presets_list = datastore.get_presets(account, device)
+    presets_list = datastore.get_presets(account)
 
     preset_number_str = str(preset_number)
     matching_preset = None

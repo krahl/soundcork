@@ -16,10 +16,12 @@ from fastapi_etag import Etag
 from soundcork.admin import get_admin_router
 from soundcork.bmx import (
     play_custom_stream,
+    tunein_navigate_profile_v1,
     tunein_navigate_v1,
     tunein_playback,
     tunein_playback_podcast,
     tunein_podcast_info,
+    tunein_search_v1,
 )
 from soundcork.config import Settings
 from soundcork.constants import ACCOUNT_RE, DEVICE_RE
@@ -699,9 +701,33 @@ def bmx_playback_podcast(episode_id: str, request: Request) -> BmxPlaybackRespon
     tags=["bmx"],
 )
 def bmx_tunein_navigate(
-    encoded_uri: str = "", subsection: int | None = None
+    encoded_uri: str = "",
+    subsection: int | None = None,
 ) -> BmxNavResponse:
     return tunein_navigate_v1(encoded_uri, subsection)
+
+
+@app.get(
+    "/bmx/tunein/v1/navigate/profiles/{profile_type}/{program_id}/{encoded_uri}",
+    response_model_exclude_none=True,
+    tags=["bmx"],
+)
+def bmx_tunein_navigate_profile(
+    encoded_uri: str = "",
+    profile_type: str | None = None,
+    program_id: str | None = None,
+) -> BmxNavResponse:
+    # the profile_type and program_id i think can be ignored in favor of the encoded_uri?
+    return tunein_navigate_profile_v1(encoded_uri)
+
+
+@app.get(
+    "/bmx/tunein/v1/search",
+    response_model_exclude_none=True,
+    tags=["bmx"],
+)
+def bmx_tunein_search_v1(request: Request) -> BmxNavResponse:
+    return tunein_search_v1(request.query_params.get("q", ""))
 
 
 @app.get("/core02/svc-bmx-adapter-orion/prod/orion/station", tags=["bmx"])
@@ -764,7 +790,13 @@ def scan_devices():
     devices = get_bose_devices()
     device_infos = {}
     for device in devices:
-        info_elem = ET.fromstring(read_device_info(hostname_for_device(device)))
+        try:
+            info_elem = ET.fromstring(read_device_info(hostname_for_device(device)))
+        except ET.ParseError as e:
+            logger.error(
+                f"Failed to read element for\n   Device: {device}\n     Hostname {hostname_for_device(device)}"
+            )
+            continue
         device_infos[device.udn] = {
             "device_id": info_elem.attrib.get("deviceID", ""),
             "name": info_elem.find("name").text,  # type: ignore
@@ -795,4 +827,4 @@ app.include_router(get_groups_service_router(datastore))
 app.include_router(get_admin_router(datastore, speakers))
 
 #  include miniapp router
-app.include_router(get_miniapp_router(datastore, settings))
+app.include_router(get_miniapp_router(datastore, speakers))

@@ -157,24 +157,3 @@ def spotify_accounts():
             for a in accounts
         ]
     }
-
-
-@router.post("/spotify/entity")
-async def spotify_entity(request: Request):
-    """Resolve a Spotify URI to a name and image URL.
-
-    Useful when storing Spotify presets -- resolves the track/album/
-    playlist name and cover art URL.
-    """
-    body = await request.json()
-    uri = body.get("uri", "")
-
-    if not uri or not uri.startswith("spotify:"):
-        raise HTTPException(status_code=400, detail={"message": "Invalid Spotify URI"})
-
-    try:
-        entity = await spotify.resolve_entity(uri)
-        return entity
-    except Exception as e:
-        logger.exception("Failed to resolve Spotify entity: %s", uri)
-        raise HTTPException(status_code=500, detail=str(e))

@@ -1,4 +1,4 @@
-"""This is feature is currently disabled because all the spotify
+"""This feature is currently disabled because all the spotify
 functionality is available just through the oauth endpoint.
 Keeping this implementation for reference in case some deficiency
 is found in the oauth endpoint implementation during user testing.

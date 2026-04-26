@@ -44,6 +44,7 @@ SPOTIFY_SCOPES_FULL = (
 
 class SpotifyService:
     """TODO refactor so instead of writing to disk, it relies on either the datastore or storing in memory."""
+
     def __init__(self):
         self._settings = Settings()
         self._accounts_file = os.path.join(
@@ -226,50 +227,3 @@ class SpotifyService:
     def list_accounts(self) -> list[dict]:
         """List all stored Spotify accounts."""
         return self._load_accounts()
-
-    async def resolve_entity(self, uri: str) -> dict:
-        """Resolve a Spotify URI to a name and image URL.
-
-        Supports: spotify:track:ID, spotify:album:ID,
-        spotify:playlist:ID, spotify:artist:ID
-        """
-        parts = uri.split(":")
-        if len(parts) != 3:
-            raise ValueError(f"Invalid Spotify URI format: {uri}")
-
-        entity_type = parts[1]
-        entity_id = parts[2]
-
-        valid_types = {"track", "album", "playlist", "artist"}
-        if entity_type not in valid_types:
-            raise ValueError(f"Unsupported Spotify entity type: {entity_type}")
-
-        api_type = entity_type + "s"
-        token_dict = await self._get_valid_token()
-        access_token = token_dict.get("access_token", "")
-
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{SPOTIFY_API_BASE}/{api_type}/{entity_id}",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-        if response.status_code == 404:
-            raise ValueError("Spotify entity not found")
-
-        if response.status_code != 200:
-            raise RuntimeError(f"Spotify API error: {response.text}")
-
-        data = response.json()
-        name = data.get("name", "Unknown")
-
-        image_url = None
-        images = data.get("images", [])
-        if not images and entity_type == "track":
-            album_images = data.get("album", {}).get("images", [])
-            if album_images:
-                image_url = album_images[0].get("url")
-        elif images:
-            image_url = images[0].get("url")
-
-        return {"name": name, "imageUrl": image_url}

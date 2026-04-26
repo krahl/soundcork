@@ -24,9 +24,15 @@ class Settings(BaseSettings):
     # local directory where soundcork stores its data
     data_dir: str = ""
 
+    # Spotify OAuth (optional — leave empty to disable)
+    spotify_client_id: str = ""
+    spotify_client_secret: str = ""
+    spotify_redirect_uri: str = ""
+
     # (optional) local directory for soundcork to store detailed logs of 404 errors
     #  used for development/debugging
     unhandled_log_dir: str = ""
+
     model_config = SettingsConfigDict(
         # `.env.private` takes priority over `.env.shared`
         env_file=(".env.shared", ".env.private")

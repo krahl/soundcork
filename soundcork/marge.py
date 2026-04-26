@@ -221,7 +221,7 @@ def configured_source_xml(conf_source: ConfiguredSource) -> ET.Element:
     )
     credential = ET.SubElement(source, "credential")
     credential.text = conf_source.secret
-    credential.attrib["type"] = "token"
+    credential.attrib["type"] = conf_source.secret_type
     ET.SubElement(source, "name").text = conf_source.source_key_account
     ET.SubElement(source, "sourceproviderid").text = str(
         PROVIDERS.index(conf_source.source_key_type) + 1
@@ -580,7 +580,9 @@ def add_source_to_account(datastore: "DataStore", account: str, xml: str) -> ET.
     source_key_type = PROVIDERS[int(source_provider_id) - 1]
     source_name = strip_element_text(source_elem.find("sourcename"))
     # if we see something that uses a secret type other than 'token' then we'll learn
-    # how that's set
+    # how that's set; there is a reference in the speaker API about a secret version
+    # that can be included in the service configuration, but it's unclear how
+    # that's passed on
     secret_type = "token"
 
     new_source = ConfiguredSource(

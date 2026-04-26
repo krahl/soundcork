@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_etag import Etag
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -78,14 +78,9 @@ datastore = DataStore()
 settings = Settings()
 speakers = Speakers(datastore, settings)
 
+from soundcork.spotify_service import SpotifyService
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("Starting up soundcork")
-    # datastore.discover_devices()
-    logger.info("done starting up server")
-    yield
-    logger.debug("closing server")
+spotify_service = SpotifyService()
 
 
 description = """
@@ -113,8 +108,9 @@ app = FastAPI(
     summary="Emulates SoundTouch servers.",
     version="0.0.1",
     openapi_tags=tags_metadata,
-    lifespan=lifespan,
 )
+
+from soundcork.management import router as management_router
 
 origins = [
     "*",
@@ -130,9 +126,7 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# @lru_cache
-# def get_settings():
-#     return Settings()
+app.include_router(management_router)
 
 
 startup_timestamp = int(datetime.now().timestamp() * 1000)
@@ -162,6 +156,49 @@ async def power_on(request: Request, response: Response) -> Response:
         response.headers["Content-Length"] = str(len(response.body))
         response.status_code = HTTPStatus.BAD_REQUEST
         return response
+
+
+@app.post(
+    "/marge/oauth/device/{device_id}/music/musicprovider/{provider_id}/token/{token_type}",
+    tags=["oauth"],
+    status_code=HTTPStatus.OK,
+)
+def oauth_token_refresh(device_id: str, provider_id: str, token_type: str):
+    """Spotify OAuth token refresh endpoint.
+
+    Intercepts the speaker's token refresh requests that would normally
+    go to streamingoauth.bose.com.  The speaker calls this when it needs
+    a fresh Spotify access token for playback.
+
+    Only handles provider 15 (Spotify).  Other providers return 404.
+    """
+    # TODO:  modify to return amazon token also
+
+    if provider_id != "15":
+        logger.info(
+            "OAuth token request for unsupported provider %s (device=%s)",
+            provider_id,
+            device_id,
+        )
+        return Response(status_code=404)
+
+    # TODO:  use device to determine account, then get by account
+    token_dict = spotify_service.get_fresh_token_sync()
+    if not token_dict:
+        logger.warning(
+            "OAuth token refresh failed — no Spotify token available (device=%s)",
+            device_id,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "no_token",
+                "error_description": "No Spotify account linked",
+            },
+        )
+
+    logger.info("OAuth token refresh for device %s (provider=Spotify)", device_id)
+    return JSONResponse(content=token_dict)
 
 
 @app.get("/marge/streaming/sourceproviders", tags=["marge"])

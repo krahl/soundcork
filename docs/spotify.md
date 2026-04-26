@@ -23,7 +23,7 @@ The speaker requests a Spotify session from the synthetic Bose APIs (Soundcork),
 
 Once the speaker has an active Spotify session (from the ZeroConf primer or a previous Spotify Connect cast), it will periodically refresh its token by calling a Bose OAuth endpoint. Soundcork intercepts these requests and returns a valid token.
 
-**Note:** The SoundTouch speakers don't have a separate configuration for the OAuth server. Rather, they take the marge server address and append `oauth` to the end of the first part of the hostname. So for the Bose systems, this this changing `https://streaming.bose.com`  to  `https://streamingoauth.bose.com`. For Soundcork to work with Spotify, it must be available both at a hostname and at an oauth hostname, so `soundcork.local.domain` and `soundcorkoauth.local.domain`.
+**Note:** The SoundTouch speakers don't have a separate configuration for the OAuth server. Rather, they take the marge server address and append `oauth` to the end of the first part of the hostname. So for the Bose systems, this is changing `https://streaming.bose.com`  to  `https://streamingoauth.bose.com`. For Soundcork to work with Spotify, it must be available both at a hostname and at an oauth hostname, so `soundcork.local.domain` and `soundcorkoauth.local.domain`.
 
 **How it works:**
 

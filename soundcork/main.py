@@ -142,9 +142,6 @@ async def power_on(request: Request, response: Response) -> Response:
     xml = await request.body()
     account = update_device_poweron(datastore, xml)
     if account:
-        source_ip = (
-            request.headers.get("x-forwarded-for", "").split(",")[0].strip() or None
-        )
         response.status_code = HTTPStatus.OK
         return response
     else:

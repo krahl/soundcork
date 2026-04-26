@@ -21,16 +21,15 @@ class NotFoundHandler:
     """
     If enabled, logs unhandled errors.
 
-    It should be set by default to ignore ui and setup files, and
-    instead only log requests that could potentially be meant for
-    the bose backend servers.
+    Log only requests that are intended for the synthetic Bose server replacements,
+    not requests native to Soundcork (eg. HTML pages, OpenAPI docs).
     """
 
     def __init__(self, log_dir: str) -> None:
         if log_dir:
             self._logging = True
             self._log_root = Path(log_dir)
-            # -- separate folders
+            # separate folders for each kind of raw log (marge vs. non-marge)
             self._log_dir_marge = self._log_root / "unhandled_raw/marge"
             self._log_dir_other = self._log_root / "unhandled_raw/other"
             self._log_dir_marge.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,8 @@
 """Unhandled Exception logger
 
-Attempts to parse the unhandled exceptions in order to produce both a log message and a pretty-printed yadda yadda fill this out.
+Attempts to parse the unhandled exceptions in order to produce both a log message and a
+pretty-printed set of files that include as much of the context for the request as we
+can provide.
 """
 
 import json

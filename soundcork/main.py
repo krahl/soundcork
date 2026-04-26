@@ -65,7 +65,7 @@ from soundcork.model import (
     BoseXMLResponse,
 )
 from soundcork.ui.speakers import Speakers
-from soundcork.unhandled import NotFoundHandler
+from soundcork.unhandled_exception_handler import NotFoundHandler
 from soundcork.utils import strip_element_text
 
 logging.basicConfig(

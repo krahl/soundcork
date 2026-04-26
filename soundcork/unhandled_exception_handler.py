@@ -1,3 +1,8 @@
+"""Unhandled Exception logger
+
+Attempts to parse the unhandled exceptions in order to produce both a log message and a pretty-printed yadda yadda fill this out.
+"""
+
 import json
 import logging
 import os

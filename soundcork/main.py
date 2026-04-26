@@ -107,7 +107,7 @@ app = FastAPI(
     openapi_tags=tags_metadata,
 )
 
-from soundcork.mgmt import router as mgmt_router
+from soundcork.management import router as management_router
 
 origins = [
     "*",
@@ -123,7 +123,7 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-app.include_router(mgmt_router)
+app.include_router(management_router)
 
 
 startup_timestamp = int(datetime.now().timestamp() * 1000)

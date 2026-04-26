@@ -1,5 +1,7 @@
 # Spotify on SoundTouch
 
+As always, requires a Premium Spotify account to work.
+
 ## Two Different Spotify Systems
 
 There are two completely separate ways Spotify works on a SoundTouch speaker. This is a common source of confusion.
@@ -9,22 +11,17 @@ There are two completely separate ways Spotify works on a SoundTouch speaker. Th
 - The speaker advertises itself as a Spotify Connect device on your local network
 - Open the Spotify app on your phone or computer, tap the speaker/device icon, and select your SoundTouch speaker
 - Audio streams directly from Spotify's CDN to the speaker
-- **No Bose servers involved** — purely between the Spotify app, Spotify's servers, and the speaker
-- **No soundcork involvement** — Spotify Connect operates independently
+- Doesn't use Soundcork in any way.
 
-### 2. SoundTouch Spotify Integration (Presets)
+## Spotify managed by speakers or Soundtouch software using Soundcork
 
-- This is what the SoundTouch app used for setting Spotify presets (buttons 1-6)
-- Originally relied on Bose's OAuth token management via the marge server
-- After the Bose shutdown, this path is broken **unless soundcork handles the token refresh**
-
-## Automatic Spotify Support
-
-Soundcork can keep Spotify presets working automatically.
+Soundcork allows users to maintain Spotify presets, and continue to play Spotify streams over any Soundtouch-enabled app.
 
 ### OAuth Token Intercept (Ongoing Refresh)
 
-Once the speaker has an active Spotify session (from the ZeroConf primer or a previous Spotify Connect cast), it will periodically refresh its token by calling an OAuth endpoint. Soundcork intercepts these requests and returns a valid token.
+The speaker requests a Spotify session from the synthetic Bose APIs (Soundcork), which negotiates for a session token with the Spotify APIs.
+
+Once the speaker has an active Spotify session (from the ZeroConf primer or a previous Spotify Connect cast), it will periodically refresh its token by calling a Bose OAuth endpoint. Soundcork intercepts these requests and returns a valid token.
 
 **Note:** The SoundTouch speakers don't have a separate configuration for the OAuth server. Rather, they take the marge server address and append `oauth` to the end of the first part of the hostname. So for the Bose systems, this this changing `https://streaming.bose.com`  to  `https://streamingoauth.bose.com`. For Soundcork to work with Spotify, it must be available both at a hostname and at an oauth hostname, so `soundcork.local.domain` and `soundcorkoauth.local.domain`.
 
@@ -35,7 +32,6 @@ Once the speaker has an active Spotify session (from the ZeroConf primer or a pr
 3. Returns a fresh access token as JSON
 4. The speaker uses this token for continued Spotify playback
 
-This is transparent — the speaker manages its own refresh cycle, just like it did with `streamingoauth.bose.com`. 
 
 ## Setup
 
@@ -91,21 +87,16 @@ After the account setup above, both `secret` and `account` information should be
 
 ### Step 5: Verify
 
-After linking your Spotify account:
-- The OAuth intercept works immediately — the speaker will get fresh tokens on its next refresh cycle
-- Press a Spotify preset button on the speaker — it should play
+After linking your Spotify account, press a Spotify preset button on the speaker. If nothing plays, check your server logs.
 
 ## Technical Details
 
 ### Token Lifecycle
 
-- Spotify access tokens expire after **1 hour** (3600 seconds)
+- Spotify access tokens expire after 1 hour (3600 seconds)
 - The speaker's firmware requests a new token via the OAuth endpoint before expiry
 - Soundcork caches tokens to avoid unnecessary Spotify API calls
 
-### What `cs3` / `token_version_3` Means
-
-The speaker requests tokens with `tokenType=cs3` in the URL. This corresponds to `token_version_3` in the XML credential format — it's Bose's internal versioning for their OAuth credential schema. The actual value is a standard Spotify access token.
 
 ### Speaker ZeroConf Endpoint
 

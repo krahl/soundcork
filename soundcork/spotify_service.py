@@ -15,12 +15,15 @@ import time
 import urllib.parse
 from datetime import datetime, timezone
 
+# TODO pick one of httpx or requests, and use consistently across the app. If there's no features of httpx
+# in particular this uses, switch to requests.
 import httpx
 
 from soundcork.config import Settings
 
 logger = logging.getLogger(__name__)
 
+# TODO move to constants
 SPOTIFY_AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_API_BASE = "https://api.spotify.com/v1"
@@ -40,6 +43,7 @@ SPOTIFY_SCOPES_FULL = (
 
 
 class SpotifyService:
+    """TODO refactor so instead of writing to disk, it relies on either the datastore or storing in memory."""
     def __init__(self):
         self._settings = Settings()
         self._accounts_file = os.path.join(
@@ -47,7 +51,10 @@ class SpotifyService:
         )
 
     def _ensure_spotify_dir(self):
-        """Create the spotify data directory if it doesn't exist."""
+        """Create the spotify data directory if it doesn't exist.
+
+        TODO: handle the exceptions on failure
+        """
         spotify_dir = os.path.dirname(self._accounts_file)
         os.makedirs(spotify_dir, exist_ok=True)
 

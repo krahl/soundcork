@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_etag import Etag
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response as StarletteResponse
 
 from soundcork.admin import get_admin_router
 from soundcork.bmx import (
@@ -63,6 +65,7 @@ from soundcork.model import (
     BoseXMLResponse,
 )
 from soundcork.ui.speakers import Speakers
+from soundcork.unhandled_exception_handler import NotFoundHandler
 from soundcork.utils import strip_element_text
 
 logging.basicConfig(
@@ -786,5 +789,12 @@ app.include_router(get_groups_service_router(datastore))
 #  include admin router
 app.include_router(get_admin_router(datastore, speakers))
 
-#  include miniapp router
-app.include_router(get_miniapp_router(datastore, speakers))
+# 404 handling
+handler = NotFoundHandler(settings.unhandled_log_dir)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def unhandled_requests(
+    request: Request, exc: StarletteHTTPException
+) -> StarletteResponse:
+    return await handler.dump_unhandled_requests(request, exc)

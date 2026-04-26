@@ -789,10 +789,6 @@ app.include_router(get_groups_service_router(datastore))
 #  include admin router
 app.include_router(get_admin_router(datastore, speakers))
 
-#  include miniapp router
-app.include_router(get_miniapp_router(datastore, settings))
-
-
 # 404 handling
 handler = NotFoundHandler(settings.unhandled_log_dir)
 

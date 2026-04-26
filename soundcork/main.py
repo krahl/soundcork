@@ -753,7 +753,13 @@ def scan_devices():
     devices = get_bose_devices()
     device_infos = {}
     for device in devices:
-        info_elem = ET.fromstring(read_device_info(hostname_for_device(device)))
+        try:
+            info_elem = ET.fromstring(read_device_info(hostname_for_device(device)))
+        except ET.ParseError as e:
+            logger.error(
+                f"Failed to read element for\n   Device: {device}\n     Hostname {hostname_for_device(device)}"
+            )
+            continue
         device_infos[device.udn] = {
             "device_id": info_elem.attrib.get("deviceID", ""),
             "name": info_elem.find("name").text,  # type: ignore

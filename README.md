@@ -3,7 +3,7 @@ Intercept API for Bose SoundTouch after they turn off the servers
 
 ## Status
 
-This project is pre-alpha. We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for more information, and the project [milestones](https://github.com/deborahgu/soundcork/milestones?sort=title&direction=asc) for our goals.
+This project is beta. We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for more information, and the project [milestones](https://github.com/deborahgu/soundcork/milestones?sort=title&direction=asc) for our goals.
 
 Read [SECURITY.md](SECURITY.md) carefully. This should only be run inside your home network, behind a firewall. (If you have a router at home, it probably has a firewall on it.) Don't put it on an open network.
 
@@ -33,7 +33,7 @@ Once logged into the speaker, you can go to `/opt/Bose/etc` and look at the file
 	  <bmxRegistryUrl>https://content.api.bose.io/bmx/registry/v1/services</bmxRegistryUrl>
 	</SoundTouchSdkPrivateCfg>
 
-Assumingly all four servers listed there will be shut down. From testing, the `marge` server is necessary for basic network functionality, and the `bmx` server seems to be required for TuneIn radio at least. The stats and swUpdate addresses don't seem to be necessary for the speaker to function.
+Assumingly all four servers listed there will be shut down. From testing, the `marge` server is necessary for basic network functionality, and the `bmx` server seems to be required for TuneIn radio, custom radio streams, and SiriusXM, at least. The stats and swUpdate addresses don't seem to be necessary for the speaker to function.
 
 ## Running, testing, and installing soundcork
 
@@ -126,19 +126,34 @@ and then start the server
 
 	fastapi run main.py
 
-Once a soundcork server is running, the next step is to configure your SoundTouch device to run using soundcork instead of the Bose servers.  The first step is to get access to the Bose system. As mentioned in the Context section above, the way to do that is to get a USB drive, create a file called ```remote_services```, plug it into the USB port of the SoundTouch speaker and then reboot the speaker (unplugging and plugging back in being the most direct way).  
+Once a soundcork server is running, the next step is to configure your SoundTouch device to run using soundcork instead of the Bose servers.  The first step is to get access to the Bose system. As mentioned in the Context section above, the way to do that is to get a USB drive, create a file called ```remote_services```, plug it into the USB port of the SoundTouch speaker. 
 
-Once the speaker has rebooted, you can connect to it via telnet. So if your SoundTouch device is on 192.168.1.158, you can do
+### Configuring speakers using the soundcork UI
+
+The easiest way to configure speakers is through the soundcork UI.  Navigate to your soundcork server at (in this example) `http://soundcork.local.example.com:8000/admin`. You should see a screen like
+![Screenshot of the soundcork admin UI.  A single account is listed with four speakers. ](./docs/images/soundcork-admin.png  "Soundcork UI")
+
+This will list all the speakers found on your local network. The "Marge" listing shows whether the speaker is currently configured to run against the main "Bose" server or are configured to run against your soundcork instance. "In Soundcork" shows if soundcork has the configuration for the speaker or not. "Reachable" indicates if the `remote_services` file has been properly read and the speaker can be accessed for update.
+
+Under "Action" there are three possible actions available: 
+
+- "Configure Account" is run first and both creates the associated account in soundcork and also adds the speaker configuration to soundcork. This action requires that the speaker be Reachable.
+- "Add to Soundcork" may be used to add the speaker configuration to soundcork once the account has been created. 
+- "Switch to Soundcork" actually configures the speaker to run using the soundcork server and then reboots the speaker. The UI will wait until the speaker has rebooted (a little over a minute usually) and then return to the admin screen. This action requires that the speaker be Reachable.
+
+
+### Manual configuration of speakers
+
+If the soundcork admin UI is not working for you, or if you just want a more hands-on experience, you can configure the speakers to run with soundcork directly.
+
+Once the speaker has had the usb with `remote_services` installed, you can connect to it via telnet. So if your SoundTouch device is on 192.168.1.158, you can do
 
 	telnet 192.168.1.158
 	
 You'll get a login screen.  Log in as user ```root```; there is no password. 
-
 Once you're logged into the shell on the SoundTouch speaker, there are two things that need to be done. First, the speaker has a lot of information about its current configuration; this information will need to be sent to the soundcork server so that we can send it back to the speaker.  Second, the speaker will need to be configured to point to the soundcork server itself.
 
 #### Configuring the soundcork server from the Bose speaker
-
-*NOTE in the future we plan to have a web UI that will automatically transfer over these values, but for now the only way to do it is by hand.* 
 
 The general layout of the soundcork db (using /home/soundcork/db as the db location) is
 
@@ -179,17 +194,14 @@ For Sources, there is some information that is stored on the devices themselves 
 
 #### Configuring the Bose speaker to use the soundcork server
 
-Now that the soundcork server has all of the information that it needs, we're ready to tell the speaker to use the soundcork server instead of the Bose servers.  For this, we go to 
+Now that the soundcork server has all of the information that it needs, we're ready to tell the speaker to use the soundcork server instead of the Bose servers.  For this, we go to the local configuration directory and copy over the default ```SoundTouchSdkPrivateCfg.xml`` as ```OverrideSdkPrivateCfg.xml```
 
-	cd /opt/Bose/etc/
-
-set the filesystem to be read-write (this is a shortcut that the Bose engineers were nice enough to put in by default)
-
-	rw
+	cd /mnt/nv
+	cp /opt/Bose/etc/SoundTouchSdkPrivateCfg.xml OverrideSdkPrivateCfg.xml
 	
-and edit the file ```SoundTouchSdkPrivateCfg.xml```
+and edit the file ```OverrideSdkPrivateCfg.xml```
 
-	vi SoundTouchSdkPrivateCfg.xml
+	vi OverrideSdkPrivateCfg.xml
 	
 The original values are
 
@@ -221,4 +233,6 @@ And finally, the moment of truth: reboot the speaker.  You can do it the way we 
 
 	reboot
 	
+
+*Note* an earlier version of this documentation had you edit the ```/opt/Bose/etc/SoundTouchSdkPrivateCfg.xml``` directly. It turns out that misformatting this file can result in the speaker entering a reboot spiral that requires a firmware update to fix. Editing ```/mnt/nv/OverrideSdkPrivateCfg.xml``` is much safer. (h/t to the [Ueberbose team](https://github.com/julius-d/ueberboese-api)  for finding this.
 

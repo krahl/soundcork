@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_etag import Etag
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -134,7 +134,19 @@ startup_timestamp = int(datetime.now().timestamp() * 1000)
 
 @app.get("/")
 def read_root():
-    return {"Bose": "Can't Brick Us"}
+    # kept for posterity
+    # return {"Bose": "Can't Brick Us"}
+
+    # if there are speakers that need to be configured default to admin
+    all_configured = True
+    for speaker in speakers.all_devices().values():
+        if not speaker.in_soundcork:
+            all_configured = False
+            break
+    if all_configured:
+        return RedirectResponse(url="/miniapp", status_code=303)
+    else:
+        return RedirectResponse(url="/admin", status_code=303)
 
 
 @app.post(

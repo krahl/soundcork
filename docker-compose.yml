@@ -1,8 +1,8 @@
 services:
   soundcork:
     image: ghcr.io/deborahgu/soundcork:main
-    ports:
-      - "8000:8000"
+    # we have to have access to the speakers for config, so run in host mode
+    network_mode: host
     environment:
       # Configure the base url where soundcork is hosted.
       # Use port 8000 for direct access or port 8001 for access through nginx-ETag.
@@ -17,8 +17,8 @@ services:
   nginx-etag: # see https://github.com/deborahgu/soundcork/issues/129
     image: nginx
     container_name: nginx-ETag
-    ports:
-      - "8001:8001"
+    # since soundcork is in host mode so is nginx
+    network_mode: host
     volumes:
       - ./nginx-ETag.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped

@@ -382,6 +382,11 @@ def account_provider_settings(account: Annotated[str, Path(pattern=ACCOUNT_RE)])
     response_class=BoseXMLResponse,
     tags=["marge"],
 )
+@app.post(
+    "/marge/streaming/music/musicprovider/{provider_id}/trial/is_eligible",
+    response_class=BoseXMLResponse,
+    tags=["marge"],
+)
 def account_provider_eligibility(provider_id: str):
     # we could parse out the payload and get the account id but why bother?
     xml = provider_settings_xml("fake", provider_id)
@@ -730,6 +735,15 @@ def bmx_tunein_search_v1(request: Request) -> BmxNavResponse:
     return tunein_search_v1(request.query_params.get("q", ""))
 
 
+@app.post(
+    "/bmx/tunein/v1/report",
+    status_code=HTTPStatus.OK,
+    tags=["bmx"],
+)
+def bmx_tunein_report(request: Request) -> None:
+    return
+
+
 @app.get("/core02/svc-bmx-adapter-orion/prod/orion/station", tags=["bmx"])
 def custom_stream_playback(request: Request) -> BmxPlaybackResponse:
     data = request.query_params.get("data", "")
@@ -758,6 +772,15 @@ def sw_update() -> Response:
 
 @app.post("/v1/scmudc/{deviceid}", tags=["stats"], status_code=HTTPStatus.OK)
 def stats_scmudc(deviceid: str):
+    """Returns 200 for the analytics endpoint.
+
+    This isn't an endpoint we use, but it's noisy when it fails. Return 200.
+    """
+    return
+
+
+@app.post("/v1/stapp/{deviceid}", tags=["stats"], status_code=HTTPStatus.OK)
+def stats_stapp(deviceid: str):
     """Returns 200 for the analytics endpoint.
 
     This isn't an endpoint we use, but it's noisy when it fails. Return 200.

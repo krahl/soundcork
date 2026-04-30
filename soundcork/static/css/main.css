@@ -19,9 +19,10 @@
     --spacing-lg: 1.5rem;
     --spacing-xl: 2rem;
 }
-
+/*
 @media (prefers-color-scheme: dark) {
     :root {
+
         --color-bg: #1e293b;
         --color-surface: #0f172a;
         --color-primary: #8ab4f8;
@@ -31,8 +32,13 @@
         --color-text-secondary: #60a5fa;
         --color-border: #0f172a;
         --color-border-highlight: #1e8e3e;
+
+        color-scheme: dark;
+
     }
+
 }
+*/
 
 body {
     font-size: 1rem;
@@ -518,7 +524,7 @@ button.preset-card:hover {
     .presets-grid {
         grid-template-columns: repeat(3, 10rem);
     }
-    
+
     .login-card {
         padding: var(--spacing-xl) 3rem;
     }

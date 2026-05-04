@@ -412,6 +412,28 @@ def test_get_presets_parses_xml_from_mocked_parse(
     assert loaded[1].container_art == ""
 
 
+def test_get_presets_allows_empty_item_name(
+    datastore: DataStore,
+    monkeypatch,
+):
+    xml = ET.fromstring("""
+        <presets>
+          <preset id="1" createdOn="" updatedOn="">
+            <ContentItem source="INTERNET_RADIO" type="uri" location="http://a" isPresetable="true">
+              <itemName />
+              <containerArt></containerArt>
+            </ContentItem>
+          </preset>
+        </presets>
+        """)
+    monkeypatch.setattr("soundcork.datastore.ET.parse", lambda _: ET.ElementTree(xml))
+    monkeypatch.setattr("soundcork.datastore.path.exists", lambda _: True)
+
+    loaded = datastore.get_presets("12345")
+
+    assert len(loaded) == 1
+    assert loaded[0].name == ""
+
 def test_get_recents_parses_xml_from_mocked_parse(
     datastore: DataStore,
     sample_device: DeviceInfo,

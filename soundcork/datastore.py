@@ -242,8 +242,7 @@ class DataStore:
             created_on = preset.attrib.get("createdOn", "")
             updated_on = preset.attrib.get("updatedOn", "")
             content_item = preset.find("ContentItem")
-            # If name is not present, the .text will correctly raise an error here
-            name = content_item.find("itemName").text  # type: ignore
+            name = strip_element_text(content_item.find("itemName"))  # type: ignore
             source = content_item.attrib["source"]  # type: ignore
             type = content_item.attrib.get("type", "")  # type: ignore
             location = content_item.attrib.get("location", "")  # type: ignore

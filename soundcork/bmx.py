@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -22,6 +23,9 @@ logger = logging.getLogger(__name__)
 # TODO: move into constants file eventually.
 TUNEIN_DESCRIBE = "https://opml.radiotime.com/describe.ashx?id=%s"
 TUNEIN_STREAM = "http://opml.radiotime.com/Tune.ashx?id=%s&formats=mp3,aac,ogg"
+TUNEIN_BROWSE = (
+    "https://opml.radiotime.com/Browse.ashx?render=json&formats=mp3,aac,ogg&%s"
+)
 # the top-level browse categories return well using the opml/ashx endpoints
 TUNEIN_NAVIGATE_ASHX = "http://opml.radiotime.com/?render=json"
 # search seems to work better using the api.radiotime.com endpoints.
@@ -35,6 +39,32 @@ TUNEIN_NAVIGATE_ASHX = "http://opml.radiotime.com/?render=json"
 TUNEIN_SEARCH = (
     "https://api.radiotime.com/profiles?fulltextsearch=true&version=1.3&query="
 )
+TUNEIN_ALLOWED_HOSTS = {"opml.radiotime.com", "api.radiotime.com"}
+TUNEIN_ROOT_CATEGORIES = [
+    ("Local Radio", "local"),
+    ("Trending", "trending"),
+    ("Music", "music"),
+]
+TUNEIN_MENU_CATEGORIES = [
+    ("Local Radio", "local"),
+    ("Podcasts", "talk"),
+    ("Music", "music"),
+    ("Sports", "sports"),
+    ("News & Talk", "news"),
+    ("Languages", "language"),
+]
+
+
+def fetch_tunein_json(url: str) -> dict:
+    contents = urllib.request.urlopen(url).read()
+    return json.loads(contents.decode("utf-8"))
+
+
+def tunein_token(refresh_token: str) -> dict:
+    return {
+        "access_token": refresh_token,
+        "refresh_token": refresh_token,
+    }
 
 
 def tunein_is_opml_uri(tunein_uri: str) -> bool:
@@ -63,6 +93,381 @@ def tunein_render_json_uri(tunein_uri: str) -> str:
     return urllib.parse.urlunsplit(
         parsed_uri._replace(query=urllib.parse.urlencode(query_params))
     )
+
+
+def tunein_serial_from_token(auth_token: str) -> str:
+    token = auth_token.strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+
+    padded = token + "=" * (-len(token) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8")
+        data = json.loads(decoded)
+    except (ValueError, json.JSONDecodeError):
+        return ""
+
+    if isinstance(data, dict):
+        return str(data.get("serial", ""))
+    return ""
+
+
+def tunein_root_navigation(
+    auth_token: str = "",
+    favorites_items: list[BmxNavItem] | None = None,
+) -> BmxNavResponse:
+    serial = tunein_serial_from_token(auth_token)
+    sections: list[BmxNavSection] = []
+    favorites_items = favorites_items or []
+    if favorites_items:
+        sections.append(
+            BmxNavSection(
+                links={"self": {"href": _navigation_href("soundcork://favorites")}},
+                items=favorites_items[:6],
+                layout="ribbon",
+                name="Saved SoundTouch presets",
+            )
+        )
+
+    for label, category in TUNEIN_ROOT_CATEGORIES:
+        preview = _preview_category_section(label, category, serial)
+        if preview:
+            sections.append(preview)
+
+    sections.append(
+        BmxNavSection(
+            links={"self": {"href": "/v1/navigate/"}},
+            items=[
+                BmxNavItem(
+                    links={
+                        "bmx_navigate": {
+                            "href": _navigation_href(
+                                _build_tunein_browse_url(serial, category)
+                            )
+                        }
+                    },
+                    image_url="",
+                    name=label,
+                    subtitle="",
+                )
+                for label, category in TUNEIN_MENU_CATEGORIES
+            ],
+            layout="responsiveGrid",
+            name="",
+        )
+    )
+
+    return BmxNavResponse(
+        links={
+            "bmx_search": {
+                "filters": [],
+                "href": "/v1/search?q={query}",
+                "templated": True,
+            },
+            "self": {"href": "/v1/navigate"},
+        },
+        bmx_sections=sections,
+        layout="classic",
+    )
+
+
+def tunein_navigation(
+    encoded_target: str,
+    auth_token: str = "",
+    favorites_items: list[BmxNavItem] | None = None,
+) -> BmxNavResponse:
+    target = _normalize_tunein_navigation_url(_decode_navigation_target(encoded_target))
+    if target == "soundcork://favorites":
+        return BmxNavResponse(
+            links={"self": {"href": _navigation_href(target)}},
+            bmx_sections=[
+                BmxNavSection(
+                    links={"self": {"href": _navigation_href(target)}},
+                    items=favorites_items or [],
+                    layout="ribbon",
+                    name="Saved SoundTouch presets",
+                )
+            ],
+            layout="classic",
+        )
+
+    parsed_target = urllib.parse.urlparse(target)
+    if parsed_target.hostname not in TUNEIN_ALLOWED_HOSTS:
+        raise ValueError("Unsupported TuneIn navigation target")
+
+    return _payload_to_navigation(fetch_tunein_json(target), target)
+
+
+def tunein_search_navigation(query: str, auth_token: str = "") -> BmxNavResponse:
+    return _payload_to_navigation(
+        fetch_tunein_json(tunein_search_uri(query)),
+        None,
+        f"/v1/search?{urllib.parse.urlencode({'q': query})}",
+    )
+
+
+def _preview_category_section(
+    label: str, category: str, serial: str
+) -> BmxNavSection | None:
+    category_url = _build_tunein_browse_url(serial, category)
+    try:
+        payload = fetch_tunein_json(category_url)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError):
+        return None
+
+    entries = _payload_entries(payload)
+    items = _entries_to_items(entries, limit=6)
+    if not items:
+        for entry in entries:
+            items = _entries_to_items(_entry_children(entry), limit=6)
+            if items:
+                break
+    if not items:
+        return None
+
+    return BmxNavSection(
+        links={"self": {"href": _navigation_href(category_url)}},
+        items=items,
+        layout="ribbon",
+        name=label,
+    )
+
+
+def _build_tunein_browse_url(serial: str, category: str) -> str:
+    query = {"c": category}
+    if serial:
+        query["serial"] = serial
+    return TUNEIN_BROWSE % urllib.parse.urlencode(query)
+
+
+def _decode_navigation_target(encoded_target: str) -> str:
+    padded = encoded_target + "=" * (-len(encoded_target) % 4)
+    return base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8")
+
+
+def _navigation_href(target: str) -> str:
+    encoded = base64.urlsafe_b64encode(target.encode("utf-8")).decode("ascii")
+    return f"/v1/navigate/{encoded}"
+
+
+def _normalize_tunein_navigation_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.hostname not in TUNEIN_ALLOWED_HOSTS:
+        return url
+
+    path = parsed.path.lower()
+    if not (
+        path.endswith("/browse.ashx")
+        or path.endswith("/search.ashx")
+    ):
+        return url
+
+    query_items = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    query_items = [(key, value) for key, value in query_items if key.lower() != "render"]
+    query_items.append(("render", "json"))
+
+    return urllib.parse.urlunparse(
+        parsed._replace(
+            scheme="https",
+            query=urllib.parse.urlencode(query_items),
+        )
+    )
+
+
+def _payload_to_navigation(
+    payload: dict, source_url: str | None, self_href: str | None = None
+) -> BmxNavResponse:
+    entries = _payload_entries(payload)
+    title = _payload_title(payload)
+    sections: list[BmxNavSection] = []
+    ungrouped_items: list[BmxNavItem] = []
+
+    for idx, entry in enumerate(entries):
+        child_items = _entries_to_items(_entry_children(entry), limit=12)
+        if child_items:
+            section_url = _entry_url(entry) or source_url
+            sections.append(
+                BmxNavSection(
+                    links=(
+                        {"self": {"href": _navigation_href(section_url)}}
+                        if section_url
+                        else None
+                    ),
+                    items=child_items,
+                    layout="ribbon" if len(child_items) > 1 else "list",
+                    name=_entry_name(entry) or title,
+                )
+            )
+            continue
+
+        item = _entry_to_item(entry)
+        if item:
+            ungrouped_items.append(item)
+        else:
+            logger.info("unhandled TuneIn navigation entry %s: %s", idx, entry)
+
+    if ungrouped_items:
+        sections.insert(
+            0,
+            BmxNavSection(
+                links=(
+                    {"self": {"href": _navigation_href(source_url)}}
+                    if source_url
+                    else None
+                ),
+                items=ungrouped_items,
+                layout="list",
+                name=title,
+            ),
+        )
+
+    return BmxNavResponse(
+        links={"self": {"href": self_href or _navigation_href(source_url or "")}},
+        bmx_sections=sections,
+        layout="classic",
+    )
+
+
+def _payload_title(payload: dict) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    head = payload.get("head", {})
+    if isinstance(head, dict):
+        return str(head.get("title", ""))
+    return ""
+
+
+def _payload_entries(payload: dict) -> list[dict]:
+    if not isinstance(payload, dict):
+        return []
+
+    for key in ("body", "Items", "items", "children", "Children"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [entry for entry in value if isinstance(entry, dict)]
+        if isinstance(value, dict):
+            nested = _payload_entries(value)
+            if nested:
+                return nested
+    return []
+
+
+def _entry_children(entry: dict) -> list[dict]:
+    for key in ("children", "Children", "items", "Items"):
+        children = entry.get(key)
+        if isinstance(children, list):
+            return [child for child in children if isinstance(child, dict)]
+    return []
+
+
+def _entries_to_items(entries: list[dict], limit: int | None = None) -> list[BmxNavItem]:
+    items = []
+    for entry in entries:
+        item = _entry_to_item(entry)
+        if item:
+            items.append(item)
+        if limit is not None and len(items) >= limit:
+            break
+    return items
+
+
+def _entry_to_item(entry: dict) -> BmxNavItem | None:
+    station_id = _station_id(entry)
+    item_name = _entry_name(entry)
+    subtitle = _entry_subtitle(entry)
+    image_url = _entry_image(entry)
+
+    if station_id:
+        playback_href = f"/v1/playback/station/{station_id}"
+        return BmxNavItem(
+            links={
+                "bmx_playback": {"href": playback_href, "type": "stationurl"},
+                "bmx_preset": {
+                    "container_art": image_url,
+                    "href": playback_href,
+                    "name": item_name,
+                    "type": "stationurl",
+                },
+            },
+            image_url=image_url,
+            name=item_name,
+            subtitle=subtitle,
+        )
+
+    entry_url = _entry_url(entry)
+    if entry_url:
+        return BmxNavItem(
+            links={"bmx_navigate": {"href": _navigation_href(entry_url)}},
+            image_url=image_url,
+            name=item_name,
+            subtitle=subtitle,
+        )
+
+    return None
+
+
+def _station_id(entry: dict) -> str:
+    for key in ("guide_id", "guideId", "GuideId", "station_id", "stationId"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.startswith("s"):
+            return value
+
+    entry_url = _entry_url(entry)
+    if not entry_url:
+        return ""
+
+    parsed = urllib.parse.urlparse(entry_url)
+    query_params = urllib.parse.parse_qs(parsed.query)
+    for value in query_params.get("id", []):
+        if value.startswith("s"):
+            return value
+    return ""
+
+
+def _entry_name(entry: dict) -> str:
+    for key in ("text", "name", "title", "Title"):
+        value = entry.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def _entry_subtitle(entry: dict) -> str:
+    for key in ("subtext", "subtitle", "Subtitle", "current_song", "description"):
+        value = entry.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def _entry_image(entry: dict) -> str:
+    for key in ("image", "imageUrl", "Image", "logo"):
+        value = entry.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def _entry_url(entry: dict) -> str:
+    for key in ("URL", "url", "href"):
+        value = entry.get(key)
+        if isinstance(value, str):
+            return _normalize_tunein_navigation_url(value)
+
+    actions = entry.get("Actions", {})
+    if isinstance(actions, dict):
+        for action_name in ("Browse", "Profile"):
+            action = actions.get(action_name, {})
+            if isinstance(action, dict) and isinstance(action.get("Url"), str):
+                return _normalize_tunein_navigation_url(action["Url"])
+
+    pivots = entry.get("Pivots", {})
+    if isinstance(pivots, dict):
+        for pivot_name in ("More", "Contents"):
+            pivot = pivots.get(pivot_name, {})
+            if isinstance(pivot, dict) and isinstance(pivot.get("Url"), str):
+                return _normalize_tunein_navigation_url(pivot["Url"])
+    return ""
 
 
 # TODO:  determine how listen_id is used, if at all

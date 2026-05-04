@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -18,12 +19,16 @@ from starlette.responses import Response as StarletteResponse
 from soundcork.admin import get_admin_router
 from soundcork.bmx import (
     play_custom_stream,
+    tunein_navigation,
     tunein_navigate_profile_v1,
     tunein_navigate_v1,
     tunein_playback,
     tunein_playback_podcast,
     tunein_podcast_info,
+    tunein_root_navigation,
     tunein_search_v1,
+    tunein_search_navigation,
+    tunein_token,
 )
 from soundcork.config import Settings
 from soundcork.constants import ACCOUNT_RE, DEVICE_RE
@@ -58,6 +63,7 @@ from soundcork.marge import (
 )
 from soundcork.miniapp import get_miniapp_router
 from soundcork.model import (
+    BmxNavItem,
     BmxNavResponse,
     BmxPlaybackResponse,
     BmxPodcastInfoResponse,
@@ -674,6 +680,72 @@ def bmx_services() -> BmxResponse:
         return bmx_response
 
 
+def account_for_source_secret(source_type: str, secret: str) -> str | None:
+    token = secret.strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+
+    for account in datastore.list_accounts():
+        if not account:
+            continue
+        try:
+            configured_sources = datastore.get_configured_sources(account)
+        except Exception:
+            continue
+
+        if any(
+            source.source_key_type == source_type and source.secret == token
+            for source in configured_sources
+        ):
+            return account
+    return None
+
+
+def tunein_saved_preset_items(auth_token: str) -> list[BmxNavItem]:
+    account = account_for_source_secret("TUNEIN", auth_token)
+    if not account:
+        return []
+
+    items = []
+    for preset in datastore.get_presets(account):
+        if preset.source != "TUNEIN" and not preset.location.startswith(
+            "/v1/playback/station/"
+        ):
+            continue
+
+        items.append(
+            BmxNavItem(
+                links={
+                    "bmx_playback": {
+                        "href": preset.location,
+                        "type": preset.type or "stationurl",
+                    },
+                    "bmx_preset": {
+                        "container_art": preset.container_art,
+                        "href": preset.location,
+                        "name": preset.name,
+                        "type": preset.type or "stationurl",
+                    },
+                },
+                image_url=preset.container_art,
+                name=preset.name,
+                subtitle="",
+            )
+        )
+    return items
+
+
+@app.post("/bmx/tunein/v1/token", tags=["bmx"])
+async def bmx_tunein_token(request: Request) -> dict:
+    payload = await request.json()
+    refresh_token = payload.get("refresh_token", "")
+    if not refresh_token:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="refresh_token required"
+        )
+    return tunein_token(refresh_token)
+
+
 @app.get(
     "/bmx/tunein/v1/playback/station/{station_id}",
     response_model_exclude_none=True,
@@ -718,9 +790,26 @@ def bmx_playback_podcast(episode_id: str, request: Request) -> BmxPlaybackRespon
     tags=["bmx"],
 )
 def bmx_tunein_navigate(
+    request: Request,
     encoded_uri: str = "",
     subsection: int | None = None,
 ) -> BmxNavResponse:
+    auth_token = request.headers.get("Authorization", "")
+    if subsection is None:
+        if not encoded_uri:
+            return tunein_root_navigation(
+                auth_token,
+                favorites_items=tunein_saved_preset_items(auth_token),
+            )
+        try:
+            return tunein_navigation(
+                encoded_uri,
+                auth_token,
+                favorites_items=tunein_saved_preset_items(auth_token),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc))
+
     return tunein_navigate_v1(encoded_uri, subsection)
 
 
@@ -744,7 +833,11 @@ def bmx_tunein_navigate_profile(
     tags=["bmx"],
 )
 def bmx_tunein_search_v1(request: Request) -> BmxNavResponse:
-    return tunein_search_v1(request.query_params.get("q", ""))
+    auth_token = request.headers.get("Authorization", "")
+    try:
+        return tunein_search_navigation(request.query_params.get("q", ""), auth_token)
+    except (KeyError, ValueError, json.JSONDecodeError):
+        return tunein_search_v1(request.query_params.get("q", ""))
 
 
 @app.post(

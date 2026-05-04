@@ -126,6 +126,22 @@ and then start the server
 
 	fastapi run main.py
 
+#### Optional TuneIn regional browsing
+
+TuneIn's `Local Radio` and `Trending` browse endpoints appear to use the
+requesting server's IP address when no location is provided. If your Soundcork
+server resolves to the wrong region, configure the TuneIn browse query in
+`.env.private`.
+
+Examples:
+
+	tunein_local_query = "c=local&latlon=51.23,6.77"
+	tunein_trending_query = "c=trending&latlon=51.23,6.77"
+
+You can also use TuneIn location IDs discovered via `Browse.ashx?id=r0`:
+
+	tunein_local_query = "id=r100447"
+
 Once a soundcork server is running, the next step is to configure your SoundTouch device to run using soundcork instead of the Bose servers.  The first step is to get access to the Bose system. As mentioned in the Context section above, the way to do that is to get a USB drive, create a file called ```remote_services```, plug it into the USB port of the SoundTouch speaker. 
 
 ### Configuring speakers using the soundcork UI
@@ -235,4 +251,3 @@ And finally, the moment of truth: reboot the speaker.  You can do it the way we 
 	
 
 *Note* an earlier version of this documentation had you edit the ```/opt/Bose/etc/SoundTouchSdkPrivateCfg.xml``` directly. It turns out that misformatting this file can result in the speaker entering a reboot spiral that requires a firmware update to fix. Editing ```/mnt/nv/OverrideSdkPrivateCfg.xml``` is much safer. (h/t to the [Ueberbose team](https://github.com/julius-d/ueberboese-api)  for finding this.
-

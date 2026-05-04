@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     spotify_client_secret: str = ""
     spotify_redirect_uri: str = ""
 
+    # TuneIn regional browsing (optional — leave empty to use TuneIn's IP geolocation)
+    # Examples:
+    # - tunein_local_query = "c=local&latlon=51.23,6.77"
+    # - tunein_local_query = "id=r100447"
+    # - tunein_trending_query = "c=trending&latlon=51.23,6.77"
+    tunein_local_query: str = ""
+    tunein_trending_query: str = ""
+
     # (optional) local directory for soundcork to store detailed logs of 404 errors
     #  used for development/debugging
     unhandled_log_dir: str = ""

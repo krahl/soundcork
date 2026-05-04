@@ -115,8 +115,11 @@ def tunein_serial_from_token(auth_token: str) -> str:
 def tunein_root_navigation(
     auth_token: str = "",
     favorites_items: list[BmxNavItem] | None = None,
+    local_query: str = "",
+    trending_query: str = "",
 ) -> BmxNavResponse:
     serial = tunein_serial_from_token(auth_token)
+    category_queries = _configured_category_queries(local_query, trending_query)
     sections: list[BmxNavSection] = []
     favorites_items = favorites_items or []
     if favorites_items:
@@ -130,7 +133,12 @@ def tunein_root_navigation(
         )
 
     for label, category in TUNEIN_ROOT_CATEGORIES:
-        preview = _preview_category_section(label, category, serial)
+        preview = _preview_category_section(
+            label,
+            category,
+            serial,
+            category_queries.get(category, ""),
+        )
         if preview:
             sections.append(preview)
 
@@ -142,7 +150,11 @@ def tunein_root_navigation(
                     links={
                         "bmx_navigate": {
                             "href": _navigation_href(
-                                _build_tunein_browse_url(serial, category)
+                                _build_tunein_browse_url(
+                                    serial,
+                                    category,
+                                    category_queries.get(category, ""),
+                                )
                             )
                         }
                     },
@@ -207,9 +219,9 @@ def tunein_search_navigation(query: str, auth_token: str = "") -> BmxNavResponse
 
 
 def _preview_category_section(
-    label: str, category: str, serial: str
+    label: str, category: str, serial: str, query_override: str = ""
 ) -> BmxNavSection | None:
-    category_url = _build_tunein_browse_url(serial, category)
+    category_url = _build_tunein_browse_url(serial, category, query_override)
     try:
         payload = fetch_tunein_json(category_url)
     except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError):
@@ -233,11 +245,53 @@ def _preview_category_section(
     )
 
 
-def _build_tunein_browse_url(serial: str, category: str) -> str:
-    query = {"c": category}
+def _build_tunein_browse_url(
+    serial: str, category: str, query_override: str = ""
+) -> str:
+    query = _parse_tunein_query_override(query_override)
+    if "c" not in query and "id" not in query:
+        query["c"] = category
     if serial:
         query["serial"] = serial
     return TUNEIN_BROWSE % urllib.parse.urlencode(query)
+
+
+def _configured_category_queries(local_query: str, trending_query: str) -> dict[str, str]:
+    queries = {}
+    if local_query:
+        queries["local"] = local_query
+    if trending_query:
+        queries["trending"] = trending_query
+    return queries
+
+
+def _parse_tunein_query_override(query_override: str) -> dict[str, str]:
+    query_override = query_override.strip()
+    if not query_override:
+        return {}
+
+    if query_override.startswith("?"):
+        query_override = query_override[1:]
+
+    parsed_url = urllib.parse.urlparse(query_override)
+    if parsed_url.scheme and parsed_url.query:
+        query_override = parsed_url.query
+
+    if "=" not in query_override:
+        if query_override.startswith("r"):
+            query_override = f"id={query_override}"
+        else:
+            query_override = f"latlon={query_override}"
+
+    query = {
+        key: value
+        for key, value in urllib.parse.parse_qsl(
+            query_override,
+            keep_blank_values=True,
+        )
+        if key.lower() != "render"
+    }
+    return query
 
 
 def _decode_navigation_target(encoded_target: str) -> str:

@@ -3,6 +3,7 @@ import json
 import urllib.parse
 
 from soundcork.bmx import (
+    _build_tunein_browse_url,
     tunein_navigate_v1,
     tunein_navigation,
     tunein_root_navigation,
@@ -143,6 +144,33 @@ def test_root_navigation_uses_local_categories_without_bose_image_links(monkeypa
         if item.image_url
     ]
     assert all("bose" not in image_url for image_url in image_urls)
+
+
+def test_tunein_browse_url_accepts_configured_region_id():
+    url = _build_tunein_browse_url(
+        "speaker-serial",
+        "local",
+        "id=r100447",
+    )
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+
+    assert query["id"] == ["r100447"]
+    assert "c" not in query
+    assert query["serial"] == ["speaker-serial"]
+    assert query["render"] == ["json"]
+
+
+def test_tunein_browse_url_accepts_configured_latlon_shorthand():
+    url = _build_tunein_browse_url(
+        "",
+        "trending",
+        "51.23,6.77",
+    )
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+
+    assert query["latlon"] == ["51.23,6.77"]
+    assert query["c"] == ["trending"]
+    assert query["render"] == ["json"]
 
 
 def test_navigation_rejects_non_tunein_targets():

@@ -800,6 +800,8 @@ def bmx_tunein_navigate(
             return tunein_root_navigation(
                 auth_token,
                 favorites_items=tunein_saved_preset_items(auth_token),
+                local_query=settings.tunein_local_query,
+                trending_query=settings.tunein_trending_query,
             )
         try:
             return tunein_navigation(

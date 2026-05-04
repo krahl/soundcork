@@ -2,7 +2,12 @@ import base64
 import json
 import urllib.parse
 
-from soundcork.bmx import tunein_navigate_v1, tunein_search_v1
+from soundcork.bmx import (
+    tunein_navigate_v1,
+    tunein_navigation,
+    tunein_root_navigation,
+    tunein_search_v1,
+)
 
 
 class FakeTuneInResponse:
@@ -103,3 +108,51 @@ def test_search_url_encodes_spaces_and_more_link_uses_encoded_query(monkeypatch)
     assert response.bmx_sections[0].items[0].links.bmx_playback.href == (
         "/v1/playback/station/s12345"
     )
+
+
+def test_root_navigation_uses_local_categories_without_bose_image_links(monkeypatch):
+    def fake_fetch_tunein_json(url):
+        return {
+            "head": {"title": "Local Radio"},
+            "body": [
+                {
+                    "text": "Preview",
+                    "children": [
+                        {
+                            "text": "WDR 2 Rheinland",
+                            "guide_id": "s213886",
+                            "subtext": "NRW",
+                            "image": "http://cdn-radiotime-logos.tunein.com/s213886g.png",
+                        }
+                    ],
+                }
+            ],
+        }
+
+    monkeypatch.setattr("soundcork.bmx.fetch_tunein_json", fake_fetch_tunein_json)
+
+    response = tunein_root_navigation()
+
+    assert response.links.bmx_search.href == "/v1/search?q={query}"
+    assert any(section.name == "Local Radio" for section in response.bmx_sections)
+
+    image_urls = [
+        item.image_url
+        for section in response.bmx_sections
+        for item in section.items
+        if item.image_url
+    ]
+    assert all("bose" not in image_url for image_url in image_urls)
+
+
+def test_navigation_rejects_non_tunein_targets():
+    encoded_target = encode_uri(
+        "https://media.bose.io/bmx-icons/tunein/top-menu/news.png"
+    )
+
+    try:
+        tunein_navigation(encoded_target)
+    except ValueError as exc:
+        assert str(exc) == "Unsupported TuneIn navigation target"
+    else:
+        raise AssertionError("TuneIn navigation accepted a non-TuneIn URL")

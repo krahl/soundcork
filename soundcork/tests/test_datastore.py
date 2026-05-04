@@ -434,6 +434,51 @@ def test_get_presets_allows_empty_item_name(
     assert len(loaded) == 1
     assert loaded[0].name == ""
 
+
+def test_update_preset_uses_username_when_name_is_missing():
+    from soundcork.marge import update_preset
+
+    class PresetDatastore:
+        def __init__(self):
+            self.saved_presets = None
+
+        def get_configured_sources(self, account, device=""):
+            return [
+                ConfiguredSource(
+                    display_name="Internet Radio",
+                    id="100006",
+                    secret="",
+                    secret_type="",
+                    source_key_type="INTERNET_RADIO",
+                    source_key_account="",
+                    created_on=DEFAULT_DATESTR,
+                    updated_on=DEFAULT_DATESTR,
+                )
+            ]
+
+        def get_presets(self, account):
+            return []
+
+        def save_presets(self, account, device, presets_list):
+            self.saved_presets = presets_list
+
+    datastore = PresetDatastore()
+    xml = b'''<?xml version="1.0" encoding="UTF-8"?>
+        <preset buttonNumber="7">
+            <sourceid>100006</sourceid>
+            <username>Beats Radio</username>
+            <location>/v1/playback/station/s309907</location>
+            <contentItemType>stationurl</contentItemType>
+            <containerArt>http://cdn-profiles.tunein.com/s309907/images/logoq.jpg?t=638940914780000000</containerArt>
+        </preset>'''
+
+    response = update_preset(datastore, "2123456", "0000BA10B1AB", 7, xml)
+
+    assert datastore.saved_presets is not None
+    assert datastore.saved_presets[0].name == "Beats Radio"
+    assert response.find("name").text == "Beats Radio"
+    assert response.find("username").text == "Beats Radio"
+
 def test_get_recents_parses_xml_from_mocked_parse(
     datastore: DataStore,
     sample_device: DeviceInfo,
